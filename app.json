@@ -18,8 +18,14 @@
       },
       "predictiveBackGestureEnabled": false
     },
+    "scheme": "family-finance",
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-router"
+    ]
   }
 }
