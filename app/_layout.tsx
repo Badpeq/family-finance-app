@@ -45,7 +45,7 @@ async function navigateByProfile(userId: string) {
     .eq('id', userId)
     .single();
 
-  if (data?.perfil_completado === false) {
+  if (!data || data.perfil_completado === false) {
     router.replace('/onboarding');
   } else {
     router.replace('/(tabs)');

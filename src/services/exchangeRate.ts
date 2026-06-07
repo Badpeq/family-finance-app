@@ -22,10 +22,10 @@ export interface TipoCambio {
 }
 
 // URL proporcionada por el usuario — Google Sheets compartido con tasa del día.
+// Configurar en .env.local como EXPO_PUBLIC_GOOGLE_SHEET_URL.
 // Si está publicado como CSV (Archivo → Publicar en la web → CSV),
 // la respuesta será texto separado por comas directamente parseable.
-// Si es solo un enlace de vista, intentaremos extraer números del HTML.
-const GOOGLE_SHEET_URL = 'https://share.google/2tmyQNGSnIZOwyfNy';
+const GOOGLE_SHEET_URL = process.env.EXPO_PUBLIC_GOOGLE_SHEET_URL ?? '';
 
 // API pública gratuita sin autenticación. Devuelve tasas relativas a USD.
 const ER_API_URL = 'https://open.er-api.com/v6/latest/USD';
@@ -70,6 +70,7 @@ function extractRatesFromText(text: string): { compra: number; venta: number } |
 // ── Fuentes externas ──────────────────────────────────────────────────────────
 
 async function fetchFromGoogleSheet(): Promise<TipoCambio | null> {
+  if (!GOOGLE_SHEET_URL) return null;
   try {
     const res  = await fetch(GOOGLE_SHEET_URL, { redirect: 'follow' });
     const text = await res.text();
