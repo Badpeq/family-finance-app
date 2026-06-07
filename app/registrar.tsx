@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 
 // ── Types ─────────────────────────────────────────────────────
 type GastoTab   = 'unica' | 'recurrente' | 'cuotas';
@@ -59,9 +60,14 @@ function fmtDeuda(simbolo: string, monto: number, linea: number) {
 export default function Registrar() {
   const { tipo, moneda } = useLocalSearchParams<{ tipo: string; moneda: string }>();
   const esIngreso = tipo === 'ingreso';
-  const simbolo   = CURRENCY_SYMBOL[moneda ?? 'PEN'] ?? 'S/';
   const accent    = esIngreso ? '#059669' : '#DC2626';
   const headerBg  = esIngreso ? '#D1FAE5' : '#FEE2E2';
+
+  // ── Multi-moneda
+  const { rate } = useExchangeRate();
+  // txMoneda: moneda en la que el usuario está ingresando este movimiento
+  const [txMoneda, setTxMoneda] = useState<'PEN'|'USD'>('PEN');
+  const simbolo = CURRENCY_SYMBOL[txMoneda] ?? 'S/';
 
   // ── Tab state
   const [gastoTab, setGastoTab] = useState<GastoTab>('unica');
@@ -167,6 +173,8 @@ export default function Registrar() {
 
     let dbError: { message: string } | null = null;
 
+    const tcHoy = rate.venta; // tasa venta PEN/USD del día
+
     if (esIngreso) {
       const m = parseMonto(iU.monto);
       if (isNaN(m) || m <= 0) { setError('Ingresa un monto válido.'); setLoading(false); return; }
@@ -174,6 +182,7 @@ export default function Registrar() {
       const { error: e } = await supabase.from('transacciones').insert({
         user_id: user.id, tipo: 'ingreso', monto: m,
         categoria: iU.categoria, descripcion: iU.descripcion.trim() || null,
+        moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
       });
       dbError = e;
 
@@ -187,6 +196,7 @@ export default function Registrar() {
         categoria: gU.categoria, descripcion: gU.descripcion.trim() || null,
         metodo_pago: gU.metodoPago,
         tarjeta_id: gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
+        moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
       });
       dbError = e;
 
@@ -326,6 +336,27 @@ export default function Registrar() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Selector de moneda */}
+        <View style={styles.currencyRow}>
+          <Text style={styles.currencyLabel}>Moneda</Text>
+          <View style={styles.currencyToggle}>
+            {(['PEN', 'USD'] as const).map(cur => (
+              <TouchableOpacity
+                key={cur}
+                style={[styles.currencyBtn, txMoneda === cur && { backgroundColor: accent }]}
+                onPress={() => setTxMoneda(cur)}
+              >
+                <Text style={[styles.currencyBtnText, txMoneda === cur && { color: '#fff' }]}>
+                  {cur === 'PEN' ? 'S/ PEN' : '$ USD'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {txMoneda === 'USD' && (
+            <Text style={styles.rateHint}>T.C. venta: S/ {rate.venta.toFixed(3)}</Text>
+          )}
+        </View>
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {/* ── Ingreso Único ── */}
@@ -753,4 +784,12 @@ const styles = StyleSheet.create({
   checkmark:  { fontSize: 18, fontWeight: '600' },
   sep:        { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
   emptyMsg:   { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+
+  // Multi-moneda
+  currencyRow:    { flexDirection:'row', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap' },
+  currencyLabel:  { fontSize:13, fontWeight:'600', color:'#374151' },
+  currencyToggle: { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, gap:0 },
+  currencyBtn:    { paddingHorizontal:14, paddingVertical:7, borderRadius:8 },
+  currencyBtnText:{ fontSize:13, fontWeight:'600', color:'#6B7280' },
+  rateHint:       { fontSize:11, color:'#9CA3AF', fontStyle:'italic' },
 });

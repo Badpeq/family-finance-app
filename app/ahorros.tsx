@@ -6,6 +6,8 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
+import { toPEN, toUSD } from '@/services/exchangeRate';
 
 type Subtipo = 'abono' | 'retiro' | 'interes';
 
@@ -13,6 +15,7 @@ interface CuentaAhorro {
   id: string;
   nombre_cuenta: string;
   saldo_actual: number;
+  moneda: string;
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
@@ -59,6 +62,10 @@ export default function Ahorros() {
   const [editCuentaError,   setEditCuentaError]   = useState('');
   const [editCuentaSaving,  setEditCuentaSaving]  = useState(false);
 
+  // Multi-moneda
+  const { rate } = useExchangeRate();
+  const [txMoneda, setTxMoneda] = useState<'PEN'|'USD'>('PEN');
+
   // Form state
   const [monto,       setMonto]   = useState('');
   const [descripcion, setDesc]    = useState('');
@@ -71,7 +78,7 @@ export default function Ahorros() {
     if (!user) return;
     const { data } = await supabase
       .from('cuentas_ahorro')
-      .select('id, nombre_cuenta, saldo_actual')
+      .select('id, nombre_cuenta, saldo_actual, moneda')
       .eq('user_id', user.id)
       .order('creado_en', { ascending: true });
     if (data) {
@@ -107,10 +114,10 @@ export default function Ahorros() {
         nombre_cuenta: nuevaCuentaNombre.trim(),
         saldo_actual: parseFloat(nuevaCuentaSaldo) || 0,
       })
-      .select('id, nombre_cuenta, saldo_actual')
+      .select('id, nombre_cuenta, saldo_actual, moneda')
       .single();
     if (data) {
-      setCuentas(prev => [...prev, data]);
+      setCuentas(prev => [...prev, data as CuentaAhorro]);
       setCuentaId(data.id);
       setNuevaCuentaNombre('');
       setNuevaCuentaSaldo('');
@@ -155,12 +162,29 @@ export default function Ahorros() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError('Sesión no encontrada.'); setLoading(false); return; }
 
+    // Si el usuario ingresa en una moneda distinta a la de la cuenta, convertir
+    // para que el trigger actualice el saldo en la moneda correcta.
+    const cuentaMoneda = cuentaActiva?.moneda ?? 'PEN';
+    let montoFinal = m;
+    let tipoCambioUsado = 1.0;
+    if (txMoneda !== cuentaMoneda) {
+      if (txMoneda === 'USD' && cuentaMoneda === 'PEN') {
+        montoFinal     = toPEN(m, 'USD', rate);
+        tipoCambioUsado = rate.venta;
+      } else if (txMoneda === 'PEN' && cuentaMoneda === 'USD') {
+        montoFinal     = toUSD(m, 'PEN', rate);
+        tipoCambioUsado = rate.compra;
+      }
+    }
+
     // Una sola operación: el trigger fn_update_saldo_ahorro maneja el saldo de la cuenta
     const { error: dbErr } = await supabase.from('ahorros_inversiones').insert({
       user_id:          user.id,
       cuenta_ahorro_id: cuentaId,
       subtipo,
-      monto:            m,
+      monto:            montoFinal,        // en la moneda de la cuenta
+      moneda_original:  txMoneda,          // moneda en que el usuario ingresó
+      tipo_cambio:      tipoCambioUsado,   // tasa usada (1 si misma moneda)
       descripcion:      descripcion.trim() || null,
     });
 
@@ -283,10 +307,42 @@ export default function Ahorros() {
 
         {!success && (
           <>
+            {/* Moneda del movimiento */}
+            {(() => {
+              const cuentaMoneda = cuentaActiva?.moneda ?? 'PEN';
+              const needsConv    = txMoneda !== cuentaMoneda;
+              const m            = parseFloat(monto.replace(',','.'));
+              return (
+                <View style={styles.currRow}>
+                  <View style={styles.currToggle}>
+                    {(['PEN','USD'] as const).map(cur => (
+                      <TouchableOpacity
+                        key={cur}
+                        style={[styles.currBtn, txMoneda === cur && { backgroundColor: tab.accent }]}
+                        onPress={() => setTxMoneda(cur)}
+                      >
+                        <Text style={[styles.currBtnText, txMoneda === cur && { color: '#fff' }]}>
+                          {cur === 'PEN' ? 'S/ PEN' : '$ USD'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {needsConv && !isNaN(m) && m > 0 && (
+                    <Text style={[styles.convHint, { color: tab.accent }]}>
+                      ≈ {cuentaMoneda === 'PEN'
+                        ? `S/ ${toPEN(m,'USD',rate).toFixed(2)}`
+                        : `$ ${toUSD(m,'PEN',rate).toFixed(2)}`
+                      } en cuenta {cuentaMoneda} · T.C. {rate.venta.toFixed(3)}
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
+
             {/* Monto */}
             <Text style={styles.label}>Monto</Text>
             <View style={styles.montoWrap}>
-              <Text style={[styles.montoPrefix, { color: tab.accent }]}>{simbolo}</Text>
+              <Text style={[styles.montoPrefix, { color: tab.accent }]}>{txMoneda === 'USD' ? '$' : simbolo}</Text>
               <TextInput
                 style={styles.montoInput}
                 placeholder="0.00" placeholderTextColor="#9CA3AF"
@@ -589,4 +645,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   editSaveText:   { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  // Multi-moneda
+  currRow:     { marginTop: 16, gap: 6 },
+  currToggle:  { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, alignSelf:'flex-start', gap:0 },
+  currBtn:     { paddingHorizontal:14, paddingVertical:7, borderRadius:8 },
+  currBtnText: { fontSize:13, fontWeight:'600', color:'#6B7280' },
+  convHint:    { fontSize:12, fontStyle:'italic' },
 });

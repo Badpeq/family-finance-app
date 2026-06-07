@@ -6,9 +6,11 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
+import { toPEN } from '@/services/exchangeRate';
 
 interface Profile     { nombre: string; moneda_base: string }
-interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string }
+interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; moneda?: string; tipo_cambio?: number }
 interface Presupuesto { categoria: string; monto_limite: number }
 
 const ICON: Record<string, string> = {
@@ -79,7 +81,7 @@ export default function Dashboard() {
         const [pRes, txRes, budRes] = await Promise.all([
           supabase.from('profiles').select('nombre,moneda_base').eq('id', user.id).single(),
           supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en')
+            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio')
             .eq('user_id', user.id).eq('activo', true)
             .gte('creado_en', startOfMonth)
             .order('creado_en', { ascending: false }).limit(100),
@@ -95,7 +97,11 @@ export default function Dashboard() {
 
         const gpc: Record<string,number> = {};
         (txRes.data ?? []).filter(t => t.tipo === 'gasto').forEach(t => {
-          gpc[t.categoria] = (gpc[t.categoria] ?? 0) + Number(t.monto);
+          const m   = Number(t.monto);
+          const mon = (t as any).moneda ?? 'PEN';
+          const tc  = (t as any).tipo_cambio ?? 1;
+          const pen = mon === 'USD' ? m * tc : m;
+          gpc[t.categoria] = (gpc[t.categoria] ?? 0) + pen;
         });
         setGastosPorCat(gpc);
         setLoading(false);
@@ -104,11 +110,25 @@ export default function Dashboard() {
     }, [])
   );
 
+  const { rate } = useExchangeRate();
+
   const currency   = profile?.moneda_base ?? 'PEN';
   const now        = new Date();
-  const income     = txs.filter(t => t.tipo === 'ingreso').reduce((s,t) => s + Number(t.monto), 0);
-  const expenses   = txs.filter(t => t.tipo === 'gasto').reduce((s,t)  => s + Number(t.monto), 0);
-  const balance    = income - expenses;
+
+  // Convertir todos los montos a PEN para el balance consolidado del Dashboard.
+  // Si una tx tiene moneda='USD', multiplicamos por tipo_cambio guardado;
+  // si falta el campo (filas antiguas), usamos la tasa venta del día.
+  function toPENAmount(tx: Transaccion): number {
+    const m   = Number(tx.monto);
+    const mon = tx.moneda ?? 'PEN';
+    if (mon === 'PEN') return m;
+    const tc  = tx.tipo_cambio ?? rate.venta;
+    return m * tc;
+  }
+
+  const income   = txs.filter(t => t.tipo === 'ingreso').reduce((s,t) => s + toPENAmount(t), 0);
+  const expenses = txs.filter(t => t.tipo === 'gasto').reduce((s,t)  => s + toPENAmount(t), 0);
+  const balance  = income - expenses;
   const recent     = txs.slice(0, 5);
 
   // Sparklines: últimos 7 días
@@ -117,8 +137,8 @@ export default function Dashboard() {
     d.setDate(d.getDate() - (6 - i));
     return d.toISOString().slice(0, 10);
   });
-  const sparkIn  = last7.map(day => txs.filter(t => t.tipo === 'ingreso' && t.creado_en.slice(0,10) === day).reduce((s,t) => s + Number(t.monto), 0));
-  const sparkOut = last7.map(day => txs.filter(t => t.tipo === 'gasto'   && t.creado_en.slice(0,10) === day).reduce((s,t) => s + Number(t.monto), 0));
+  const sparkIn  = last7.map(day => txs.filter(t => t.tipo === 'ingreso' && t.creado_en.slice(0,10) === day).reduce((s,t) => s + toPENAmount(t), 0));
+  const sparkOut = last7.map(day => txs.filter(t => t.tipo === 'gasto'   && t.creado_en.slice(0,10) === day).reduce((s,t) => s + toPENAmount(t), 0));
 
   const periodoDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
