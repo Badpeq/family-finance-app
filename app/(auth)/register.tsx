@@ -14,22 +14,23 @@ import { Link } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 export default function Register() {
-  const [phone, setPhone] = useState('');
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [confirm, setConfirm]   = useState('');
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [success, setSuccess]   = useState(false);
 
   const handleRegister = async () => {
-    const sanitizedPhone = phone.replace(/\s+/g, '');
+    const trimmedEmail = email.trim().toLowerCase();
 
-    if (!sanitizedPhone || !password.trim() || !confirm.trim()) {
+    if (!trimmedEmail || !password.trim() || !confirm.trim()) {
       setError('Completa todos los campos.');
       return;
     }
 
-    if (!sanitizedPhone.startsWith('+')) {
-      setError('El número debe incluir el código de país (ej: +51987654321).');
+    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      setError('Ingresa un correo electrónico válido.');
       return;
     }
 
@@ -46,14 +47,34 @@ export default function Register() {
     setError('');
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({ phone: sanitizedPhone, password });
+    const { error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password,
+    });
 
     if (error) {
       setError(error.message);
+    } else {
+      setSuccess(true);
     }
 
     setLoading(false);
   };
+
+  if (success) {
+    return (
+      <View style={styles.successContainer}>
+        <Text style={styles.successIcon}>📧</Text>
+        <Text style={styles.successTitle}>¡Cuenta creada!</Text>
+        <Text style={styles.successText}>
+          Revisa tu correo y confirma tu cuenta para continuar.
+        </Text>
+        <Link href="/(auth)/login" style={styles.successLink}>
+          Ir al login
+        </Link>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -65,19 +86,20 @@ export default function Register() {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.title}>Crear cuenta</Text>
-        <Text style={styles.subtitle}>Registra tu número de celular con código de país</Text>
+        <Text style={styles.subtitle}>Regístrate con tu correo electrónico</Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Text style={styles.label}>Número de celular</Text>
+        <Text style={styles.label}>Correo electrónico</Text>
         <TextInput
           style={styles.input}
-          placeholder="+51 987 654 321"
+          placeholder="correo@ejemplo.com"
           placeholderTextColor="#9CA3AF"
-          keyboardType="phone-pad"
-          autoComplete="tel"
-          value={phone}
-          onChangeText={setPhone}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+          value={email}
+          onChangeText={setEmail}
           editable={!loading}
         />
 
@@ -200,6 +222,36 @@ const styles = StyleSheet.create({
   link: {
     color: '#3B82F6',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  // Success state
+  successContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    backgroundColor: '#F9FAFB',
+  },
+  successIcon: {
+    fontSize: 56,
+    marginBottom: 20,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  successText: {
+    fontSize: 15,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  successLink: {
+    fontSize: 16,
+    color: '#3B82F6',
     fontWeight: '600',
   },
 });
