@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { toPEN } from '@/services/exchangeRate';
 
-interface Profile     { nombre: string; moneda_base: string }
+interface Profile     { nombre: string; moneda_base: string; modulo_ahorros: boolean; modulo_prestamos: boolean; presupuesto_template: Record<string,number> | null }
 interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; moneda?: string; tipo_cambio?: number }
 interface Presupuesto { categoria: string; monto_limite: number }
 
@@ -79,7 +79,7 @@ export default function Dashboard() {
         const periodoDate  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
         const [pRes, txRes, budRes] = await Promise.all([
-          supabase.from('profiles').select('nombre,moneda_base').eq('id', user.id).single(),
+          supabase.from('profiles').select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,presupuesto_template').eq('id', user.id).single(),
           supabase.from('transacciones')
             .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio')
             .eq('user_id', user.id).eq('activo', true)
@@ -93,7 +93,27 @@ export default function Dashboard() {
         if (!active) return;
         if (pRes.data)   setProfile(pRes.data as Profile);
         if (txRes.data)  setTxs(txRes.data as Transaccion[]);
-        if (budRes.data) setPresupuestos(budRes.data as Presupuesto[]);
+
+        // Auto-replicar presupuestos: si no hay ninguno este mes pero el perfil
+        // tiene un template guardado, crear los presupuestos automáticamente.
+        const budData = budRes.data ?? [];
+        if (budData.length === 0 && pRes.data) {
+          const template = (pRes.data as any).presupuesto_template as Record<string,number> | null;
+          if (template && Object.keys(template).length > 0) {
+            const upserts = Object.entries(template).map(([cat, monto]) => ({
+              user_id: user.id, categoria: cat, monto_limite: monto, periodo: periodoDate,
+            }));
+            const { data: created } = await supabase
+              .from('presupuestos')
+              .upsert(upserts, { onConflict: 'user_id,categoria,periodo' })
+              .select('categoria,monto_limite');
+            if (active && created) setPresupuestos(created as Presupuesto[]);
+          } else {
+            setPresupuestos([]);
+          }
+        } else {
+          if (budRes.data) setPresupuestos(budRes.data as Presupuesto[]);
+        }
 
         const gpc: Record<string,number> = {};
         (txRes.data ?? []).filter(t => t.tipo === 'gasto').forEach(t => {
@@ -231,12 +251,12 @@ export default function Dashboard() {
           {/* ── Acciones rápidas (scroll horizontal) ── */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
             {[
-              { icon:'＋', label:'Ingreso',   bg:'#D1FAE5', fg:'#059669', fn:() => router.push(`/registrar?tipo=ingreso&moneda=${currency}`) },
-              { icon:'－', label:'Gasto',     bg:'#FEE2E2', fg:'#DC2626', fn:() => router.push(`/registrar?tipo=gasto&moneda=${currency}`) },
-              { icon:'💳', label:'Pagar',     bg:'#FEF3C7', fg:'#92400E', fn:() => router.push(`/pagos?moneda=${currency}`) },
-              { icon:'🏦', label:'Ahorros',   bg:'#E0F2FE', fg:'#0369A1', fn:() => router.push(`/ahorros?moneda=${currency}`) },
-              { icon:'📋', label:'Préstamos', bg:'#EDE9FE', fg:'#5B21B6', fn:() => router.push(`/prestamos?moneda=${currency}`) },
-            ].map(a => (
+              { icon:'＋', label:'Ingreso',   bg:'#D1FAE5', fg:'#059669', show: true,                              fn:() => router.push(`/registrar?tipo=ingreso&moneda=${currency}`) },
+              { icon:'－', label:'Gasto',     bg:'#FEE2E2', fg:'#DC2626', show: true,                              fn:() => router.push(`/registrar?tipo=gasto&moneda=${currency}`) },
+              { icon:'💳', label:'Pagar',     bg:'#FEF3C7', fg:'#92400E', show: !!profile?.modulo_prestamos,       fn:() => router.push(`/pagos?moneda=${currency}`) },
+              { icon:'🏦', label:'Ahorros',   bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,         fn:() => router.push(`/ahorros?moneda=${currency}`) },
+              { icon:'📋', label:'Préstamos', bg:'#EDE9FE', fg:'#5B21B6', show: !!profile?.modulo_prestamos,       fn:() => router.push(`/prestamos?moneda=${currency}`) },
+            ].filter(a => a.show).map(a => (
               <TouchableOpacity key={a.label} style={[styles.chip, { backgroundColor: a.bg }]} onPress={a.fn} activeOpacity={0.75}>
                 <Text style={styles.chipIcon}>{a.icon}</Text>
                 <Text style={[styles.chipLabel, { color: a.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{a.label}</Text>
@@ -341,15 +361,15 @@ export default function Dashboard() {
             <Text style={styles.sheetTitle}>¿Qué quieres registrar?</Text>
             <View style={styles.sheetDiv} />
             {[
-              { icon:'＋', label:'Registrar Ingreso',    sub:'Sueldo, freelance, transferencias', bg:'#D1FAE5', fg:'#059669',
+              { icon:'＋', label:'Registrar Ingreso',    sub:'Sueldo, freelance, transferencias',  bg:'#D1FAE5', fg:'#059669', show: true,
                 fn: () => { setShowQuickAdd(false); router.push(`/registrar?tipo=ingreso&moneda=${currency}`); } },
-              { icon:'－', label:'Registrar Gasto',      sub:'Alimentación, transporte, servicios', bg:'#FEE2E2', fg:'#DC2626',
+              { icon:'－', label:'Registrar Gasto',      sub:'Alimentación, transporte, servicios', bg:'#FEE2E2', fg:'#DC2626', show: true,
                 fn: () => { setShowQuickAdd(false); router.push(`/registrar?tipo=gasto&moneda=${currency}`); } },
-              { icon:'💳', label:'Pagar deuda',          sub:'Tarjeta de crédito o préstamo', bg:'#FEF3C7', fg:'#92400E',
+              { icon:'💳', label:'Pagar deuda',          sub:'Tarjeta de crédito o préstamo',      bg:'#FEF3C7', fg:'#92400E', show: !!profile?.modulo_prestamos,
                 fn: () => { setShowQuickAdd(false); router.push(`/pagos?moneda=${currency}`); } },
-              { icon:'🏦', label:'Movimiento de ahorro', sub:'Abono, retiro o interés', bg:'#E0F2FE', fg:'#0369A1',
+              { icon:'🏦', label:'Movimiento de ahorro', sub:'Abono, retiro o interés',            bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,
                 fn: () => { setShowQuickAdd(false); router.push(`/ahorros?moneda=${currency}`); } },
-            ].map((opt, i, arr) => (
+            ].filter(opt => opt.show).map((opt, i, arr) => (
               <View key={opt.label}>
                 <TouchableOpacity style={styles.sheetOpt} onPress={opt.fn}>
                   <View style={[styles.sheetOptIcon, { backgroundColor: opt.bg }]}>
