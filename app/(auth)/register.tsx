@@ -50,6 +50,9 @@ export default function Register() {
     const { error } = await supabase.auth.signUp({
       email: trimmedEmail,
       password,
+      options: {
+        emailRedirectTo: 'https://family-finance-app-ruby.vercel.app',
+      },
     });
 
     if (error) {
