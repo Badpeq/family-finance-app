@@ -239,7 +239,7 @@ export default function Dashboard() {
             ].map(a => (
               <TouchableOpacity key={a.label} style={[styles.chip, { backgroundColor: a.bg }]} onPress={a.fn} activeOpacity={0.75}>
                 <Text style={styles.chipIcon}>{a.icon}</Text>
-                <Text style={[styles.chipLabel, { color: a.fg }]}>{a.label}</Text>
+                <Text style={[styles.chipLabel, { color: a.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{a.label}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -460,9 +460,9 @@ const styles = StyleSheet.create({
   heroStatAmt:  { fontSize: 13, fontWeight: '700' },
   heroDiv:      { width: 1, height: 44, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 16, marginTop: 2 },
 
-  chip:      { alignItems:'center', paddingHorizontal:16, paddingVertical:12, borderRadius:16, minWidth:72, gap:4 },
+  chip:      { alignItems:'center', paddingHorizontal:14, paddingVertical:12, borderRadius:16, minWidth:68, maxWidth:90, gap:4 },
   chipIcon:  { fontSize: 20 },
-  chipLabel: { fontSize: 12, fontWeight: '600' },
+  chipLabel: { fontSize: 11, fontWeight: '600', textAlign:'center' },
 
   section:      { marginBottom: 20 },
   sectionHead:  { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12 },

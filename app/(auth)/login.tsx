@@ -13,32 +13,33 @@ import { Link } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 export default function Login() {
-  const [phone, setPhone] = useState('');
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
 
   const handleLogin = async () => {
-    const sanitizedPhone = phone.replace(/\s+/g, '');
+    const trimmedEmail = email.trim().toLowerCase();
 
-    if (!sanitizedPhone || !password.trim()) {
+    if (!trimmedEmail || !password.trim()) {
       setError('Completa todos los campos.');
       return;
     }
 
-    if (!sanitizedPhone.startsWith('+')) {
-      setError('El número debe incluir el código de país (ej: +51987654321).');
+    if (!trimmedEmail.includes('@')) {
+      setError('Ingresa un correo electrónico válido.');
       return;
     }
 
     setError('');
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ phone: sanitizedPhone, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password,
+    });
 
-    if (error) {
-      setError(error.message);
-    }
+    if (error) setError(error.message);
 
     setLoading(false);
   };
@@ -50,18 +51,19 @@ export default function Login() {
     >
       <View style={styles.inner}>
         <Text style={styles.title}>Bienvenido</Text>
-        <Text style={styles.subtitle}>Ingresa con tu número de celular</Text>
+        <Text style={styles.subtitle}>Ingresa con tu correo electrónico</Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TextInput
           style={styles.input}
-          placeholder="+51 987 654 321"
+          placeholder="correo@ejemplo.com"
           placeholderTextColor="#9CA3AF"
-          keyboardType="phone-pad"
-          autoComplete="tel"
-          value={phone}
-          onChangeText={setPhone}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+          value={email}
+          onChangeText={setEmail}
           editable={!loading}
         />
 
