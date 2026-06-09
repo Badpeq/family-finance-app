@@ -55,6 +55,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="analisis"
+        options={{
+          title: 'Análisis',
+          tabBarIcon: ({ focused }) => <Icon glyph="📈" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="cuentas"
         options={{
           title: 'Cuentas',
@@ -64,7 +71,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="mas"
         options={{
-          title: 'Más',
+          title: 'Config',
           tabBarIcon: ({ focused }) => <Icon glyph="⚙️" focused={focused} />,
         }}
       />

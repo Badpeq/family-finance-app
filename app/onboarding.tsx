@@ -197,6 +197,33 @@ export default function Onboarding() {
     setStep('presupuestos');
   };
 
+  const handleSkipIngreso = async () => {
+    // Presupuestos base estandarizados (sin ingreso real)
+    const BASE_AMOUNTS: Record<string, number> = {
+      Vivienda: 500, Alimentación: 300, Transporte: 150, Servicios: 80,
+      Salud: 50, Entretenimiento: 100, Ropa: 80, Educación: 100,
+      Restaurantes: 80, Otros: 60,
+    };
+    const rows = DEFAULT_BUDGET_ROWS.map(r => ({
+      ...r, active: true, amount: String(BASE_AMOUNTS[r.cat] ?? 50),
+    }));
+    setBudgetRows(rows);
+    if (userId) {
+      setLoading(true);
+      const now = new Date();
+      const periodoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const template: Record<string, number> = {};
+      const upserts = rows.map(r => {
+        template[r.cat] = Number(r.amount);
+        return { user_id: userId, categoria: r.cat, monto_limite: Number(r.amount), periodo: periodoDate };
+      });
+      await supabase.from('presupuestos').upsert(upserts, { onConflict: 'user_id,categoria,periodo' });
+      await supabase.from('profiles').update({ ingreso_mensual: 0, presupuesto_template: template }).eq('id', userId);
+      setLoading(false);
+    }
+    setStep('modulos');
+  };
+
   const handleToggleRow = (cat: string) => {
     setBudgetRows(prev => prev.map(r => r.cat === cat ? { ...r, active: !r.active } : r));
   };
@@ -396,6 +423,11 @@ export default function Onboarding() {
 
           <TouchableOpacity style={[s.btn, { marginTop: 20 }]} onPress={handleIngresoNext}>
             <Text style={s.btnText}>Calcular mi presupuesto →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.skipBtn} onPress={handleSkipIngreso} disabled={loading}>
+            {loading
+              ? <ActivityIndicator color="#9CA3AF" size="small" />
+              : <Text style={s.skipBtnText}>Configurar ingresos más tarde</Text>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -695,6 +727,8 @@ const s = StyleSheet.create({
   btnOff:    { opacity: 0.6 },
   btnText:   { color: '#fff', fontSize: 16, fontWeight: '600' },
   finishBtn: { backgroundColor: '#7C3AED', marginTop: 24 },
+  skipBtn:   { marginTop: 14, alignItems: 'center', paddingVertical: 10 },
+  skipBtnText:{ fontSize: 14, color: '#9CA3AF', textDecorationLine: 'underline' },
   finishNote:{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginTop: 12 },
 
   currencyBtn:  { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 },

@@ -2,24 +2,24 @@ import { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Platform, ActivityIndicator, Modal, TextInput,
-  StatusBar, SafeAreaView,
+  StatusBar, SafeAreaView, Switch,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { toPEN } from '@/services/exchangeRate';
 
-interface Profile     { nombre: string; moneda_base: string; modulo_ahorros: boolean; modulo_prestamos: boolean; presupuesto_template: Record<string,number> | null }
+interface Profile     { nombre: string; moneda_base: string; modulo_ahorros: boolean; modulo_prestamos: boolean; modulo_tarjetas: boolean; presupuesto_template: Record<string,number> | null }
 interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; moneda?: string; tipo_cambio?: number }
-interface Presupuesto { categoria: string; monto_limite: number }
+interface Presupuesto { categoria: string; monto_limite: number; seguimiento_diario: boolean }
 
 const ICON: Record<string, string> = {
-  Sueldo:'💼', Freelance:'💻', Inversiones:'📈', Negocio:'🏪',
+  Sueldo:'💼', Bono:'🎁', Freelance:'💻', Inversiones:'📈', Negocio:'🏪',
   Ahorro:'🏦', 'Retiro Ahorro':'💰', 'Pago Tarjeta':'💳', 'Abono Préstamo':'📋',
   Alimentación:'🛒', Transporte:'🚗', Vivienda:'🏠', Entretenimiento:'🎬',
-  Salud:'💊', Educación:'📚', Ropa:'👕', Servicios:'⚡', Otros:'📦',
+  Salud:'💊', Educación:'📚', Ropa:'👕', Servicios:'⚡', Restaurantes:'🍽️', Otros:'📦',
 };
-const CATS_GASTO = ['Alimentación','Transporte','Vivienda','Entretenimiento','Salud','Educación','Ropa','Servicios','Otros'];
+const CATS_GASTO = ['Alimentación','Transporte','Vivienda','Entretenimiento','Salud','Educación','Ropa','Servicios','Restaurantes','Otros'];
 const SYM: Record<string,string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
 const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
@@ -55,17 +55,19 @@ export default function Dashboard() {
   const [txs,          setTxs]          = useState<Transaccion[]>([]);
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [gastosPorCat, setGastosPorCat] = useState<Record<string,number>>({});
+  const [gastosHoy,    setGastosHoy]    = useState<Record<string,number>>({});
   const [loading,      setLoading]      = useState(true);
 
   // Quick Add modal
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   // Presupuesto add modal
-  const [showNewBudget,  setShowNewBudget]  = useState(false);
-  const [newBudCat,      setNewBudCat]      = useState('');
-  const [newBudMonto,    setNewBudMonto]    = useState('');
-  const [newBudError,    setNewBudError]    = useState('');
-  const [newBudSaving,   setNewBudSaving]   = useState(false);
-  const [showBudPicker,  setShowBudPicker]  = useState(false);
+  const [showNewBudget,     setShowNewBudget]     = useState(false);
+  const [newBudCat,         setNewBudCat]         = useState('');
+  const [newBudMonto,       setNewBudMonto]       = useState('');
+  const [newBudSeguimiento, setNewBudSeguimiento] = useState(false);
+  const [newBudError,       setNewBudError]       = useState('');
+  const [newBudSaving,      setNewBudSaving]      = useState(false);
+  const [showBudPicker,     setShowBudPicker]     = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -79,14 +81,14 @@ export default function Dashboard() {
         const periodoDate  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
         const [pRes, txRes, budRes] = await Promise.all([
-          supabase.from('profiles').select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,presupuesto_template').eq('id', user.id).single(),
+          supabase.from('profiles').select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template').eq('id', user.id).single(),
           supabase.from('transacciones')
             .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio')
             .eq('user_id', user.id).eq('activo', true)
             .gte('creado_en', startOfMonth)
-            .order('creado_en', { ascending: false }).limit(100),
+            .order('creado_en', { ascending: false }).limit(200),
           supabase.from('presupuestos')
-            .select('categoria,monto_limite')
+            .select('categoria,monto_limite,seguimiento_diario')
             .eq('user_id', user.id).eq('periodo', periodoDate),
         ]);
 
@@ -106,7 +108,7 @@ export default function Dashboard() {
             const { data: created } = await supabase
               .from('presupuestos')
               .upsert(upserts, { onConflict: 'user_id,categoria,periodo' })
-              .select('categoria,monto_limite');
+              .select('categoria,monto_limite,seguimiento_diario');
             if (active && created) setPresupuestos(created as Presupuesto[]);
           } else {
             setPresupuestos([]);
@@ -115,15 +117,21 @@ export default function Dashboard() {
           if (budRes.data) setPresupuestos(budRes.data as Presupuesto[]);
         }
 
+        const todayStr = new Date().toISOString().slice(0, 10);
         const gpc: Record<string,number> = {};
+        const ghoy: Record<string,number> = {};
         (txRes.data ?? []).filter(t => t.tipo === 'gasto').forEach(t => {
           const m   = Number(t.monto);
           const mon = (t as any).moneda ?? 'PEN';
           const tc  = (t as any).tipo_cambio ?? 1;
           const pen = mon === 'USD' ? m * tc : m;
           gpc[t.categoria] = (gpc[t.categoria] ?? 0) + pen;
+          if (t.creado_en.slice(0, 10) === todayStr) {
+            ghoy[t.categoria] = (ghoy[t.categoria] ?? 0) + pen;
+          }
         });
         setGastosPorCat(gpc);
+        setGastosHoy(ghoy);
         setLoading(false);
       })();
       return () => { active = false; };
@@ -171,13 +179,14 @@ export default function Dashboard() {
     const { data:{ user } } = await supabase.auth.getUser();
     if (!user) { setNewBudSaving(false); return; }
     const { error } = await supabase.from('presupuestos').upsert({
-      user_id: user.id, categoria: newBudCat, monto_limite: monto, periodo: periodoDate,
+      user_id: user.id, categoria: newBudCat, monto_limite: monto,
+      seguimiento_diario: newBudSeguimiento, periodo: periodoDate,
     }, { onConflict: 'user_id,categoria,periodo' });
     if (error) { setNewBudError(error.message); setNewBudSaving(false); return; }
     setPresupuestos(prev => {
       const idx = prev.findIndex(p => p.categoria === newBudCat);
-      if (idx >= 0) return prev.map((p,i) => i === idx ? {...p, monto_limite: monto} : p);
-      return [...prev, { categoria: newBudCat, monto_limite: monto }];
+      if (idx >= 0) return prev.map((p,i) => i === idx ? {...p, monto_limite: monto, seguimiento_diario: newBudSeguimiento} : p);
+      return [...prev, { categoria: newBudCat, monto_limite: monto, seguimiento_diario: newBudSeguimiento }];
     });
     setShowNewBudget(false);
     setNewBudCat('');
@@ -200,7 +209,7 @@ export default function Dashboard() {
               <Text style={styles.greeting}>{loading ? '...' : `Hola, ${profile?.nombre ?? ''}! 👋`}</Text>
               <Text style={styles.subGreeting}>{MONTHS[now.getMonth()]} {now.getFullYear()}</Text>
             </View>
-            <TouchableOpacity style={styles.avatar}>
+            <TouchableOpacity style={styles.avatar} onPress={() => router.push('/(tabs)/mas')}>
               <Text style={styles.avatarText}>{initial}</Text>
             </TouchableOpacity>
           </View>
@@ -253,7 +262,7 @@ export default function Dashboard() {
             {[
               { icon:'＋', label:'Ingreso',   bg:'#D1FAE5', fg:'#059669', show: true,                              fn:() => router.push(`/registrar?tipo=ingreso&moneda=${currency}`) },
               { icon:'－', label:'Gasto',     bg:'#FEE2E2', fg:'#DC2626', show: true,                              fn:() => router.push(`/registrar?tipo=gasto&moneda=${currency}`) },
-              { icon:'💳', label:'Pagar',     bg:'#FEF3C7', fg:'#92400E', show: !!profile?.modulo_prestamos,       fn:() => router.push(`/pagos?moneda=${currency}`) },
+              { icon:'💳', label:'Pagar',     bg:'#FEF3C7', fg:'#92400E', show: !!(profile?.modulo_prestamos || profile?.modulo_tarjetas), fn:() => router.push(`/pagos?moneda=${currency}`) },
               { icon:'🏦', label:'Ahorros',   bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,         fn:() => router.push(`/ahorros?moneda=${currency}`) },
               { icon:'📋', label:'Préstamos', bg:'#EDE9FE', fg:'#5B21B6', show: !!profile?.modulo_prestamos,       fn:() => router.push(`/prestamos?moneda=${currency}`) },
             ].filter(a => a.show).map(a => (
@@ -264,11 +273,51 @@ export default function Dashboard() {
             ))}
           </ScrollView>
 
+          {/* ── Widget: Cuota diaria ── */}
+          {!loading && presupuestos.some(p => p.seguimiento_diario) && (() => {
+            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            const items = presupuestos.filter(p => p.seguimiento_diario).map(p => {
+              const cuota     = p.monto_limite / daysInMonth;
+              const gastado   = gastosHoy[p.categoria] ?? 0;
+              const remaining = Math.max(cuota - gastado, 0);
+              const pct       = cuota > 0 ? Math.min(gastado / cuota, 1) : 0;
+              return { ...p, cuota, gastado, remaining, pct };
+            });
+            return (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>⏱ Disponible hoy</Text>
+                <Text style={[styles.budgetGastado, { marginBottom: 10, marginTop: 2 }]}>
+                  Cuota diaria = presupuesto ÷ {daysInMonth} días del mes
+                </Text>
+                {items.map(item => {
+                  const color = budgetColor(item.pct);
+                  return (
+                    <View key={item.categoria} style={[styles.budgetItem, { borderLeftWidth: 3, borderLeftColor: color }]}>
+                      <View style={styles.budgetItemTop}>
+                        <Text style={styles.budgetCat}>{ICON[item.categoria] ?? '📦'} {item.categoria}</Text>
+                        <Text style={[styles.budgetPct, { color }]}>
+                          {SYM[currency] ?? currency} {item.remaining.toFixed(2)} hoy
+                        </Text>
+                      </View>
+                      <View style={styles.barBg}>
+                        <View style={[styles.barFill, { width: `${Math.round(item.pct * 100)}%` as any, backgroundColor: color }]} />
+                      </View>
+                      <View style={styles.budgetItemBot}>
+                        <Text style={styles.budgetGastado}>{fmt(item.gastado, currency)} gastado hoy</Text>
+                        <Text style={styles.budgetLimite}>cuota {fmt(item.cuota, currency)}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()}
+
           {/* ── Presupuestos del mes ── */}
           <View style={styles.section}>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionTitle}>📊 Presupuestos</Text>
-              <TouchableOpacity onPress={() => { setNewBudCat(''); setNewBudMonto(''); setNewBudError(''); setShowNewBudget(true); }}>
+              <TouchableOpacity onPress={() => { setNewBudCat(''); setNewBudMonto(''); setNewBudSeguimiento(false); setNewBudError(''); setShowNewBudget(true); }}>
                 <Text style={styles.sectionLink}>＋ Agregar</Text>
               </TouchableOpacity>
             </View>
@@ -286,10 +335,17 @@ export default function Dashboard() {
               const color   = budgetColor(pct);
               const pctInt  = Math.round(pct * 100);
               return (
-                <View key={p.categoria} style={styles.budgetItem}>
+                <TouchableOpacity key={p.categoria} style={styles.budgetItem} activeOpacity={0.75}
+                  onPress={() => router.push(`/categoria-detalle?categoria=${encodeURIComponent(p.categoria)}&presupuesto=${p.monto_limite}&moneda=${currency}`)}>
                   <View style={styles.budgetItemTop}>
-                    <Text style={styles.budgetCat}>{ICON[p.categoria] ?? '📦'} {p.categoria}</Text>
-                    <Text style={[styles.budgetPct, { color }]}>{pctInt}%</Text>
+                    <Text style={styles.budgetCat}>{ICON[p.categoria] ?? '📦'} {p.categoria}{p.seguimiento_diario ? ' ⏱' : ''}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.budgetPct, { color }]}>{pctInt}%</Text>
+                      <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={() => { setNewBudCat(p.categoria); setNewBudMonto(String(p.monto_limite)); setNewBudSeguimiento(p.seguimiento_diario ?? false); setNewBudError(''); setShowNewBudget(true); }}>
+                        <Text style={{ color: '#9CA3AF', fontSize: 14 }}>✎</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <View style={styles.barBg}>
                     <View style={[styles.barFill, { width: `${pctInt}%` as any, backgroundColor: color }]} />
@@ -298,7 +354,7 @@ export default function Dashboard() {
                     <Text style={styles.budgetGastado}>{fmt(gastado, currency)} gastado</Text>
                     <Text style={styles.budgetLimite}>de {fmt(p.monto_limite, currency)}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
@@ -414,6 +470,17 @@ export default function Dashboard() {
                 placeholder="0.00" placeholderTextColor="#9CA3AF"
                 keyboardType="decimal-pad" value={newBudMonto} onChangeText={setNewBudMonto}
               />
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.formLabel}>Seguimiento diario ⏱</Text>
+                  <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+                    Muestra cuánto puedes gastar hoy
+                  </Text>
+                </View>
+                <Switch value={newBudSeguimiento} onValueChange={setNewBudSeguimiento}
+                  trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
+                  thumbColor={newBudSeguimiento ? '#3B82F6' : '#9CA3AF'} />
+              </View>
               {!!newBudError && <Text style={styles.formError}>{newBudError}</Text>}
               <TouchableOpacity
                 style={[styles.formSaveBtn, newBudSaving && { opacity: 0.6 }]}
@@ -562,6 +629,9 @@ const styles = StyleSheet.create({
   formSaveBtn:  { height:50, backgroundColor:'#7C3AED', borderRadius:12,
                   justifyContent:'center', alignItems:'center', marginTop:20 },
   formSaveText: { color:'#fff', fontSize:15, fontWeight:'600' },
+  switchRow:    { flexDirection:'row', alignItems:'center', backgroundColor:'#F9FAFB',
+                  borderWidth:1, borderColor:'#E5E7EB', borderRadius:12,
+                  paddingHorizontal:14, paddingVertical:12, marginTop:14 },
   catOpt:       { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
                   paddingHorizontal:20, paddingVertical:14 },
   catOptText:   { fontSize:15, color:'#111827' },
