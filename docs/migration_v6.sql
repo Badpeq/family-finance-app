@@ -22,11 +22,23 @@ CREATE TABLE IF NOT EXISTS public.categorias_personalizadas (
 
 ALTER TABLE public.categorias_personalizadas ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "usuarios_ven_sus_categorias"
-  ON public.categorias_personalizadas
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename  = 'categorias_personalizadas'
+      AND policyname = 'usuarios_ven_sus_categorias'
+  ) THEN
+    EXECUTE $p$
+      CREATE POLICY "usuarios_ven_sus_categorias"
+        ON public.categorias_personalizadas
+        FOR ALL
+        USING (auth.uid() = user_id)
+        WITH CHECK (auth.uid() = user_id)
+    $p$;
+  END IF;
+END $$;
 
 -- ── Verificar ────────────────────────────────────────────────────────────────
 SELECT column_name, data_type
