@@ -139,43 +139,96 @@ export function parseVoucherText(text: string): ParsedLine[] {
 }
 
 // ─── Parser de ticket de supermercado ─────────────────────────────────────
-// Formato esperado: "Nombre Producto  Qty x PU  TOTAL"
-// o líneas sueltas: "Leche Gloria 1L   x2  S/ 8.50"
+// Soporta dos formatos:
+//   A) Todo en una línea:  "Leche Gloria 1L  x2  8.50"
+//   B) Google Vision OCR:  cada elemento en línea propia
+//                          "Leche Gloria 1L\nx2\nS/ 8.50"
+
+const SKIP_TICKET = /^(subtotal|total|igv|itbm|itv|descuento|ruc|ticket|gracias|fecha|caja|cajero|entregado|cambio|método|efectivo|tarjeta|yape|plin|boleta|factura|nota|www\.|tel:|av\.|jr\.|ruc:)/i;
+const IS_PRICE    = /^[Ss]\/\.?\s*([\d]+[.,]\d{2})$|^([\d]+[.,]\d{2})$/;
+const IS_QTY      = /^[xX]\s*\d+$|^\d+\s*[xX]$/;
+
+function extractPrice(s: string): number | null {
+  const m = s.match(/^[Ss]\/\.?\s*([\d]+[.,]\d{2})$/) ??
+            s.match(/^([\d]+[.,]\d{2})$/);
+  if (!m) return null;
+  const v = parseFloat((m[1] ?? m[2]).replace(',', '.'));
+  return v > 0 && v < 100_000 ? v : null;
+}
+
+function isProductName(s: string): boolean {
+  if (SKIP_TICKET.test(s)) return false;
+  if (IS_PRICE.test(s))    return false;
+  if (IS_QTY.test(s))      return false;
+  if (/^\d+$/.test(s))     return false;
+  return s.length >= 3;
+}
+
+// Pre-procesa la salida de Google Vision: agrupa nombre + qty + precio en una línea
+function mergeVisionLines(lines: string[]): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!isProductName(line)) { i++; continue; }
+
+    let merged = line;
+    let j = i + 1;
+    // Absorbe hasta 2 líneas siguientes si son qty o precio
+    while (j < lines.length && j <= i + 2) {
+      const next = lines[j];
+      if (IS_QTY.test(next)) {
+        merged += ' ' + next; j++;
+      } else if (IS_PRICE.test(next)) {
+        const p = extractPrice(next);
+        if (p !== null) merged += ' ' + p.toFixed(2);
+        j++; break;
+      } else {
+        break;
+      }
+    }
+    out.push(merged);
+    i = j;
+  }
+  return out;
+}
 
 export function parseTicketItems(text: string): ParsedItem[] {
-  const lines  = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const items: ParsedItem[] = [];
 
-  for (const raw of lines) {
-    if (/^(subtotal|total|igv|itbm|descuento|ruc|ticket|gracias|fecha|caja)/i.test(raw)) continue;
+  // Detectar si el texto viene de Vision OCR (precios en líneas propias)
+  const priceOnlyLines = rawLines.filter(l => IS_PRICE.test(l)).length;
+  const lines = priceOnlyLines >= 3 ? mergeVisionLines(rawLines) : rawLines;
 
-    // Extraer precio total al final de la línea
+  for (const raw of lines) {
+    if (SKIP_TICKET.test(raw)) continue;
+
     const totalMatch = raw.match(/([\d]+[.,]\d{2})\s*$/);
     if (!totalMatch) continue;
 
     const precio_total = parseFloat(totalMatch[1].replace(',', '.'));
-    if (isNaN(precio_total) || precio_total <= 0) continue;
+    if (isNaN(precio_total) || precio_total <= 0 || precio_total > 100_000) continue;
 
-    // Detectar cantidad y precio unitario: "2 x 4.50" o "x2"
     let cantidad = 1;
     let precio_unitario = precio_total;
 
-    const qtyMatch = raw.match(/(\d+)\s*[xX\*]\s*([\d]+[.,]\d{2})/);
-    if (qtyMatch) {
-      cantidad        = parseInt(qtyMatch[1], 10);
-      precio_unitario = parseFloat(qtyMatch[2].replace(',', '.'));
+    const qtyPuMatch = raw.match(/(\d+)\s*[xX\*]\s*([\d]+[.,]\d{2})/);
+    if (qtyPuMatch) {
+      cantidad        = parseInt(qtyPuMatch[1], 10);
+      precio_unitario = parseFloat(qtyPuMatch[2].replace(',', '.'));
     } else {
       const xMatch = raw.match(/[xX]\s*(\d+)/);
       if (xMatch) {
         cantidad        = parseInt(xMatch[1], 10);
-        precio_unitario = precio_total / cantidad;
+        precio_unitario = Math.round((precio_total / cantidad) * 100) / 100;
       }
     }
 
-    // Nombre del producto: texto antes de cantidad/precio
     let producto = raw
       .replace(/(\d+)\s*[xX\*]\s*[\d]+[.,]\d{2}/g, '')
       .replace(/[xX]\s*\d+/g, '')
+      .replace(/[Ss]\/\.?\s*/g, '')
       .replace(/([\d]+[.,]\d{2})\s*$/, '')
       .replace(/\s{2,}/g, ' ')
       .trim();
