@@ -144,9 +144,13 @@ export function parseVoucherText(text: string): ParsedLine[] {
 //   B) Google Vision OCR:  cada elemento en línea propia
 //                          "Leche Gloria 1L\nx2\nS/ 8.50"
 
-const SKIP_TICKET = /^(subtotal|total|igv|itbm|itv|descuento|ruc|ticket|gracias|fecha|caja|cajero|entregado|cambio|método|efectivo|tarjeta|yape|plin|boleta|factura|nota|www\.|tel:|av\.|jr\.|ruc:)/i;
-const IS_PRICE    = /^[Ss]\/\.?\s*([\d]+[.,]\d{2})$|^([\d]+[.,]\d{2})$/;
-const IS_QTY      = /^[xX]\s*\d+$|^\d+\s*[xX]$/;
+const SKIP_TICKET  = /^(subtotal|total|igv|itbm|itv|descuento|ruc|ticket|gracias|fecha|caja|cajero|entregado|cambio|método|efectivo|tarjeta|yape|plin|boleta|factura|nota|www\.|tel:|av\.|jr\.|ruc:|unidad|op[.:]|importe|vuelto|tarj|ciento)/i;
+const IS_PRICE     = /^[Ss]\/\.?\s*([\d]+[.,]\d{2})$|^([\d]+[.,]\d{2})$/;
+const IS_QTY_ONLY  = /^[xX]\s*\d+$|^\d+\s*[xX]$/;
+// "2 X @ 4.50"  "2 X or 4.50"  "2x4.50"
+const IS_QTY_PRICE = /^(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?([\d]+[.,]\d{2})$/i;
+// Leading EAN-8 to EAN-14 barcode: "7750571002165 SALE CHR ESP"
+const BARCODE_PREFIX = /^\d{8,14}\s+/;
 
 function extractPrice(s: string): number | null {
   const m = s.match(/^[Ss]\/\.?\s*([\d]+[.,]\d{2})$/) ??
@@ -157,14 +161,20 @@ function extractPrice(s: string): number | null {
 }
 
 function isProductName(s: string): boolean {
-  if (SKIP_TICKET.test(s)) return false;
-  if (IS_PRICE.test(s))    return false;
-  if (IS_QTY.test(s))      return false;
-  if (/^\d+$/.test(s))     return false;
+  if (SKIP_TICKET.test(s))  return false;
+  if (IS_PRICE.test(s))     return false;
+  if (IS_QTY_ONLY.test(s))  return false;
+  if (IS_QTY_PRICE.test(s)) return false;
+  if (/^\d+$/.test(s))      return false;
+  // Pure barcode line (no letters after the digits)
+  if (/^\d{8,14}$/.test(s)) return false;
   return s.length >= 3;
 }
 
-// Pre-procesa la salida de Google Vision: agrupa nombre + qty + precio en una línea
+// Pre-procesa la salida de Google Vision: agrupa nombre + qty + precio en una línea.
+// Maneja:
+//   "BARCODE NOMBRE\n17.90"          → "BARCODE NOMBRE 17.90"
+//   "BARCODE NOMBRE\n2 X or 4.50\n9.00" → "BARCODE NOMBRE 2 X or 4.50 9.00"
 function mergeVisionLines(lines: string[]): string[] {
   const out: string[] = [];
   let i = 0;
@@ -174,15 +184,19 @@ function mergeVisionLines(lines: string[]): string[] {
 
     let merged = line;
     let j = i + 1;
-    // Absorbe hasta 2 líneas siguientes si son qty o precio
-    while (j < lines.length && j <= i + 2) {
+    let priceFound = false;
+    // Absorbe hasta 3 líneas siguientes: qty-only, qty+price, o solo precio
+    while (j < lines.length && j <= i + 3 && !priceFound) {
       const next = lines[j];
-      if (IS_QTY.test(next)) {
+      if (IS_QTY_ONLY.test(next)) {
+        merged += ' ' + next; j++;
+      } else if (IS_QTY_PRICE.test(next)) {
+        // "2 X or 4.50" — la siguiente línea debería ser el total
         merged += ' ' + next; j++;
       } else if (IS_PRICE.test(next)) {
         const p = extractPrice(next);
         if (p !== null) merged += ' ' + p.toFixed(2);
-        j++; break;
+        j++; priceFound = true;
       } else {
         break;
       }
@@ -213,7 +227,8 @@ export function parseTicketItems(text: string): ParsedItem[] {
     let cantidad = 1;
     let precio_unitario = precio_total;
 
-    const qtyPuMatch = raw.match(/(\d+)\s*[xX\*]\s*([\d]+[.,]\d{2})/);
+    // "2 X @ 4.50"  "2 X or 4.50"  "2x4.50"
+    const qtyPuMatch = raw.match(/(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?([\d]+[.,]\d{2})/i);
     if (qtyPuMatch) {
       cantidad        = parseInt(qtyPuMatch[1], 10);
       precio_unitario = parseFloat(qtyPuMatch[2].replace(',', '.'));
@@ -226,10 +241,11 @@ export function parseTicketItems(text: string): ParsedItem[] {
     }
 
     let producto = raw
-      .replace(/(\d+)\s*[xX\*]\s*[\d]+[.,]\d{2}/g, '')
-      .replace(/[xX]\s*\d+/g, '')
-      .replace(/[Ss]\/\.?\s*/g, '')
-      .replace(/([\d]+[.,]\d{2})\s*$/, '')
+      .replace(BARCODE_PREFIX, '')                                      // strip EAN barcode
+      .replace(/(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?[\d]+[.,]\d{2}/gi, '') // strip qty+price
+      .replace(/[xX]\s*\d+/gi, '')                                     // strip standalone qty
+      .replace(/[Ss]\/\.?\s*/g, '')                                    // strip S/.
+      .replace(/([\d]+[.,]\d{2})\s*$/, '')                             // strip trailing price
       .replace(/\s{2,}/g, ' ')
       .trim();
 

@@ -20,7 +20,7 @@ export async function pickAndOcr(source: OcrSource): Promise<string> {
 
   const opts: ImagePicker.ImagePickerOptions = {
     mediaTypes: ['images'],
-    quality: 0.85,
+    quality: 0.5,
     base64: true,
     allowsEditing: false,
   };
@@ -36,6 +36,12 @@ export async function pickAndOcr(source: OcrSource): Promise<string> {
 
   if (!base64) throw new Error('No se pudo leer la imagen.');
 
+  // Vercel serverless limit is 4.5 MB; base64 adds ~33% overhead
+  const estimatedBytes = Math.ceil(base64.length * 0.75);
+  if (estimatedBytes > 3_500_000) {
+    throw new Error('La foto es demasiado grande. Intenta con una foto más cercana al ticket.');
+  }
+
   const res = await fetch(OCR_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -44,6 +50,7 @@ export async function pickAndOcr(source: OcrSource): Promise<string> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as { error?: string };
+    if (res.status === 413) throw new Error('La foto es demasiado grande para procesar. Acércate más al ticket.');
     throw new Error(err.error ?? `Error OCR (${res.status})`);
   }
 
