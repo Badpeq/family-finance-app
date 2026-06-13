@@ -7,10 +7,19 @@ import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
 interface MonthSummary {
-  mes:      string;  // 'YYYY-MM'
+  mes:      string;
   ingresos: number;
   gastos:   number;
   porCat:   Record<string, number>;
+}
+
+interface ProductoPrecio {
+  producto:  string;
+  historia:  { mes: string; precio: number }[];
+  precioUlt: number;
+  precioAvg: number;
+  pctChange: number;
+  alerta:    boolean;
 }
 
 const SYM: Record<string, string> = {
@@ -32,11 +41,37 @@ function MiniBar({ value, max, color }: { value: number; max: number; color: str
   );
 }
 
+function Sparkline({ values, alerta }: { values: number[]; alerta: boolean }) {
+  if (values.length < 2) return null;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  const H = 28;
+  const BAR_W = 10;
+  const GAP   = 4;
+  const color = alerta ? '#EF4444' : '#7C3AED';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: H, gap: GAP }}>
+      {values.map((v, i) => {
+        const h = Math.max(4, ((v - min) / range) * H);
+        const isLast = i === values.length - 1;
+        return (
+          <View key={i} style={{
+            width: BAR_W, height: h, borderRadius: 3,
+            backgroundColor: isLast ? color : color + '55',
+          }} />
+        );
+      })}
+    </View>
+  );
+}
+
 export default function Analisis() {
-  const [summaries, setSummaries] = useState<MonthSummary[]>([]);
-  const [currency,  setCurrency]  = useState('PEN');
-  const [loading,   setLoading]   = useState(true);
-  const [tab,       setTab]       = useState<'meses' | 'categorias'>('meses');
+  const [summaries, setSummaries]   = useState<MonthSummary[]>([]);
+  const [productos, setProductos]   = useState<ProductoPrecio[]>([]);
+  const [currency,  setCurrency]    = useState('PEN');
+  const [loading,   setLoading]     = useState(true);
+  const [tab,       setTab]         = useState<'meses' | 'categorias' | 'precios'>('meses');
 
   useFocusEffect(
     useCallback(() => {
@@ -46,22 +81,25 @@ export default function Analisis() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || !active) return;
 
-        const [profRes, txRes] = await Promise.all([
+        const [profRes, txRes, detRes] = await Promise.all([
           supabase.from('profiles').select('moneda_base').eq('id', user.id).single(),
           supabase.from('transacciones')
-            .select('tipo,monto,categoria,creado_en,moneda,tipo_cambio')
+            .select('id,tipo,monto,categoria,creado_en,moneda,tipo_cambio')
             .eq('user_id', user.id)
             .eq('activo', true)
             .order('creado_en', { ascending: true }),
+          supabase.from('transaccion_detalles')
+            .select('producto,precio_unitario,transacciones!inner(creado_en,user_id)')
+            .eq('transacciones.user_id', user.id),
         ]);
 
         if (!active) return;
         const cur = (profRes.data as any)?.moneda_base ?? 'PEN';
         setCurrency(cur);
 
+        // ── Build monthly summaries ────────────────────────────────────────
         const txs = (txRes.data ?? []) as any[];
         const byMonth: Record<string, MonthSummary> = {};
-
         txs.forEach(tx => {
           const mes = tx.creado_en.slice(0, 7);
           if (!byMonth[mes]) byMonth[mes] = { mes, ingresos: 0, gastos: 0, porCat: {} };
@@ -72,9 +110,58 @@ export default function Analisis() {
             byMonth[mes].porCat[tx.categoria] = (byMonth[mes].porCat[tx.categoria] ?? 0) + amt;
           }
         });
-
         const sorted = Object.values(byMonth).sort((a, b) => a.mes.localeCompare(b.mes));
         setSummaries(sorted);
+
+        // ── Build product price history ────────────────────────────────────
+        const dets = (detRes.data ?? []) as any[];
+        const byProd: Record<string, { mes: string; precio: number }[]> = {};
+        dets.forEach(d => {
+          const tx = d.transacciones as any;
+          if (!tx?.creado_en) return;
+          const mes      = tx.creado_en.slice(0, 7);
+          const key      = d.producto.toLowerCase().trim();
+          const nombre   = d.producto;
+          if (!byProd[nombre]) byProd[nombre] = [];
+          byProd[nombre].push({ mes, precio: Number(d.precio_unitario) });
+        });
+
+        // Aggregate by product+month (avg per month)
+        const prodList: ProductoPrecio[] = [];
+        Object.entries(byProd).forEach(([nombre, entradas]) => {
+          const porMes: Record<string, number[]> = {};
+          entradas.forEach(e => {
+            if (!porMes[e.mes]) porMes[e.mes] = [];
+            porMes[e.mes].push(e.precio);
+          });
+          const historia = Object.entries(porMes)
+            .sort(([a],[b]) => a.localeCompare(b))
+            .map(([mes, precios]) => ({
+              mes,
+              precio: Math.round((precios.reduce((s,p)=>s+p,0) / precios.length) * 100) / 100,
+            }));
+          if (historia.length < 2) return;
+          const precios   = historia.map(h => h.precio);
+          const precioUlt = precios[precios.length - 1];
+          const precioAvg = Math.round((precios.slice(0, -1).reduce((s,p)=>s+p,0) / (precios.length-1)) * 100) / 100;
+          const pctChange = precioAvg > 0 ? Math.round(((precioUlt - precioAvg) / precioAvg) * 100) : 0;
+          prodList.push({
+            producto:  nombre,
+            historia,
+            precioUlt,
+            precioAvg,
+            pctChange,
+            alerta:    precioUlt > precioAvg * 1.1,
+          });
+        });
+
+        // Sort: alertas first, then by pctChange desc
+        prodList.sort((a, b) => {
+          if (a.alerta !== b.alerta) return a.alerta ? -1 : 1;
+          return b.pctChange - a.pctChange;
+        });
+        setProductos(prodList);
+
         setLoading(false);
       })();
       return () => { active = false; };
@@ -83,16 +170,20 @@ export default function Analisis() {
 
   const sym = SYM[currency] ?? currency;
   const fmt = (n: number) => `${sym} ${n.toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmtP = (n: number) => `${sym} ${n.toFixed(2)}`;
 
-  // ── Insights ────────────────────────────────────────────────────────────────
+  function fmtMes(ym: string) {
+    const [y, m] = ym.split('-');
+    return `${MONTHS_ES[parseInt(m, 10) - 1]} ${y}`;
+  }
+
+  // ── Insights ──────────────────────────────────────────────────────────────
   function generateInsights(): string[] {
     const insights: string[] = [];
     if (summaries.length < 2) return insights;
+    const last = summaries[summaries.length - 1];
+    const prev = summaries[summaries.length - 2];
 
-    const last  = summaries[summaries.length - 1];
-    const prev  = summaries[summaries.length - 2];
-
-    // Balance
     const balLast = last.ingresos - last.gastos;
     const balPrev = prev.ingresos - prev.gastos;
     if (balLast > balPrev) {
@@ -101,14 +192,12 @@ export default function Analisis() {
       insights.push(`⚠️ Tu balance bajó de ${fmt(balPrev)} en ${fmtMes(prev.mes)} a ${fmt(balLast)} en ${fmtMes(last.mes)}. Revisa tus gastos.`);
     }
 
-    // Gastos totales
     const gPct = pct(last.gastos, prev.gastos);
     if (Math.abs(gPct) >= 5) {
       const dir = gPct > 0 ? 'aumentaron' : 'bajaron';
       insights.push(`${gPct > 0 ? '📈' : '📉'} Tus gastos totales ${dir} un ${Math.abs(gPct)}% respecto al mes anterior.`);
     }
 
-    // Por categoría
     const allCats = new Set([...Object.keys(last.porCat), ...Object.keys(prev.porCat)]);
     allCats.forEach(cat => {
       const a = last.porCat[cat] ?? 0;
@@ -116,37 +205,32 @@ export default function Analisis() {
       if (b === 0 || a === 0) return;
       const diff = pct(a, b);
       if (diff >= 20) {
-        insights.push(`📌 Gastaste un ${diff}% más en ${cat} que el mes pasado (${fmt(a)} vs ${fmt(b)}). Te sugerimos ajustar tu meta diaria.`);
+        insights.push(`📌 Gastaste un ${diff}% más en ${cat} que el mes pasado (${fmt(a)} vs ${fmt(b)}).`);
       } else if (diff <= -20) {
-        insights.push(`🎉 Redujiste un ${Math.abs(diff)}% en ${cat} respecto al mes anterior. ¡Buen trabajo!`);
+        insights.push(`🎉 Redujiste un ${Math.abs(diff)}% en ${cat}. ¡Buen trabajo!`);
       }
     });
 
-    // Tasa de ahorro
     if (last.ingresos > 0) {
       const savRate = Math.round(((last.ingresos - last.gastos) / last.ingresos) * 100);
-      if (savRate >= 20) insights.push(`💰 Tasa de ahorro: ${savRate}% en ${fmtMes(last.mes)}. ¡Estás dentro de la regla 50/30/20!`);
+      if (savRate >= 20) insights.push(`💰 Tasa de ahorro: ${savRate}% en ${fmtMes(last.mes)}. ¡Dentro de la regla 50/30/20!`);
       else if (savRate > 0) insights.push(`💡 Tasa de ahorro: ${savRate}% en ${fmtMes(last.mes)}. La meta recomendada es 20%.`);
-      else insights.push(`🚨 Tus gastos superaron tus ingresos en ${fmtMes(last.mes)}. Considera revisar tu presupuesto.`);
+      else insights.push(`🚨 Tus gastos superaron tus ingresos en ${fmtMes(last.mes)}.`);
     }
 
     return insights.slice(0, 5);
   }
 
-  function fmtMes(ym: string) {
-    const [y, m] = ym.split('-');
-    return `${MONTHS_ES[parseInt(m, 10) - 1]} ${y}`;
-  }
-
-  const maxGastos = Math.max(...summaries.map(s => s.gastos), 1);
+  const maxGastos   = Math.max(...summaries.map(s => s.gastos),   1);
   const maxIngresos = Math.max(...summaries.map(s => s.ingresos), 1);
-  const insights = generateInsights();
+  const insights    = generateInsights();
 
-  // Top categorías del último mes
   const lastMonth = summaries[summaries.length - 1];
-  const topCats = lastMonth
+  const topCats   = lastMonth
     ? Object.entries(lastMonth.porCat).sort((a, b) => b[1] - a[1]).slice(0, 6)
     : [];
+
+  const alertas   = productos.filter(p => p.alerta);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
@@ -168,18 +252,21 @@ export default function Analisis() {
 
           {/* ── Tabs ── */}
           <View style={s.tabs}>
-            {(['meses', 'categorias'] as const).map(t => (
+            {(['meses', 'categorias', 'precios'] as const).map(t => (
               <TouchableOpacity key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => setTab(t)}>
                 <Text style={[s.tabText, tab === t && s.tabTextOn]}>
-                  {t === 'meses' ? 'Por mes' : 'Por categoría'}
+                  {t === 'meses' ? 'Por mes' : t === 'categorias' ? 'Categorías' : 'Precios'}
                 </Text>
+                {t === 'precios' && alertas.length > 0 && (
+                  <View style={s.badge}><Text style={s.badgeText}>{alertas.length}</Text></View>
+                )}
               </TouchableOpacity>
             ))}
           </View>
 
+          {/* ── TAB: Por mes ── */}
           {tab === 'meses' && (
             <>
-              {/* ── Comparativo mensual ── */}
               <View style={s.card}>
                 <Text style={s.cardTitle}>Comparativo mensual {new Date().getFullYear()}</Text>
                 {summaries.map((sum, i) => {
@@ -189,7 +276,7 @@ export default function Analisis() {
                   const gastDiff = prevSum ? pct(sum.gastos, prevSum.gastos) : null;
                   return (
                     <View key={sum.mes} style={[s.monthRow, i < summaries.length - 1 && s.monthRowBorder]}>
-                      <View style={{ width: 48 }}>
+                      <View style={{ width: 44 }}>
                         <Text style={s.monthLabel}>{fmtMes(sum.mes)}</Text>
                       </View>
                       <View style={{ flex: 1, gap: 4 }}>
@@ -217,7 +304,6 @@ export default function Analisis() {
                 })}
               </View>
 
-              {/* ── Insights ── */}
               {insights.length > 0 && (
                 <View style={s.card}>
                   <Text style={s.cardTitle}>💡 Recomendaciones</Text>
@@ -231,6 +317,7 @@ export default function Analisis() {
             </>
           )}
 
+          {/* ── TAB: Por categoría ── */}
           {tab === 'categorias' && lastMonth && (
             <>
               <View style={s.card}>
@@ -264,7 +351,6 @@ export default function Analisis() {
                 })}
               </View>
 
-              {/* Distribución porcentual */}
               {lastMonth.gastos > 0 && (
                 <View style={s.card}>
                   <Text style={s.cardTitle}>Distribución del gasto</Text>
@@ -284,6 +370,98 @@ export default function Analisis() {
               )}
             </>
           )}
+
+          {/* ── TAB: Precios e Inflación ── */}
+          {tab === 'precios' && (
+            <>
+              {productos.length === 0 ? (
+                <View style={s.card}>
+                  <Text style={s.cardTitle}>📦 Precios e Inflación</Text>
+                  <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 36, marginBottom: 12 }}>🏷️</Text>
+                    <Text style={s.emptyText}>
+                      Importa tickets de supermercado para{'\n'}detectar variaciones de precios.
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  {/* Alertas de inflación */}
+                  {alertas.length > 0 && (
+                    <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: '#EF4444' }]}>
+                      <Text style={s.cardTitle}>🚨 Alerta de precios (+10% sobre promedio)</Text>
+                      {alertas.map((p, i) => (
+                        <View key={p.producto} style={[s.prodRow, i < alertas.length - 1 && s.prodRowBorder]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.prodName} numberOfLines={1}>{p.producto}</Text>
+                            <Text style={s.prodMeta}>
+                              Promedio: {fmtP(p.precioAvg)} · Actual: {fmtP(p.precioUlt)}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                            <Text style={s.alertBadge}>▲ {p.pctChange}%</Text>
+                            <Sparkline values={p.historia.map(h => h.precio)} alerta />
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Todos los productos con historial */}
+                  <View style={s.card}>
+                    <Text style={s.cardTitle}>Evolución de precios por producto</Text>
+                    <Text style={s.priceSubtitle}>
+                      Precio unitario promedio mensual — última barra = más reciente
+                    </Text>
+                    {productos.map((p, i) => (
+                      <View key={p.producto} style={[s.prodRow, i < productos.length - 1 && s.prodRowBorder]}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={s.prodName} numberOfLines={1}>{p.producto}</Text>
+                          <Text style={s.prodMeta}>
+                            {p.historia.map(h => `${fmtMes(h.mes).slice(0,3)}: ${fmtP(h.precio)}`).join('  ·  ')}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: 4, marginLeft: 8 }}>
+                          <Text style={[s.priceUlt, { color: p.alerta ? '#EF4444' : p.pctChange < 0 ? '#22C55E' : '#374151' }]}>
+                            {fmtP(p.precioUlt)}
+                          </Text>
+                          {p.pctChange !== 0 && (
+                            <Text style={[s.diffLabel, { color: p.pctChange > 0 ? '#EF4444' : '#22C55E' }]}>
+                              {p.pctChange > 0 ? '▲' : '▼'} {Math.abs(p.pctChange)}%
+                            </Text>
+                          )}
+                          <Sparkline values={p.historia.map(h => h.precio)} alerta={p.alerta} />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Resumen inflación */}
+                  <View style={[s.card, { backgroundColor: '#F0FDF4' }]}>
+                    <Text style={s.cardTitle}>📊 Resumen</Text>
+                    <View style={s.summaryRow}>
+                      <View style={s.summaryItem}>
+                        <Text style={s.summaryNum}>{productos.length}</Text>
+                        <Text style={s.summaryLabel}>Productos rastreados</Text>
+                      </View>
+                      <View style={s.summarySep} />
+                      <View style={s.summaryItem}>
+                        <Text style={[s.summaryNum, { color: '#EF4444' }]}>{alertas.length}</Text>
+                        <Text style={s.summaryLabel}>Con alza &gt;10%</Text>
+                      </View>
+                      <View style={s.summarySep} />
+                      <View style={s.summaryItem}>
+                        <Text style={[s.summaryNum, { color: '#22C55E' }]}>
+                          {productos.filter(p => p.pctChange < 0).length}
+                        </Text>
+                        <Text style={s.summaryLabel}>Con baja de precio</Text>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              )}
+            </>
+          )}
         </ScrollView>
       )}
     </View>
@@ -291,27 +469,31 @@ export default function Analisis() {
 }
 
 const s = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 12,
+            paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   title:  { fontSize: 20, fontWeight: '800', color: '#111827' },
 
   empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { fontSize: 15, color: '#6B7280', textAlign: 'center', lineHeight: 24 },
+  emptyText: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
 
   tabs:       { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 12, padding: 4, marginBottom: 16 },
-  tab:        { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
+  tab:        { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, flexDirection: 'row', justifyContent: 'center', gap: 4 },
   tabOn:      { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-  tabText:    { fontSize: 13, fontWeight: '500', color: '#9CA3AF' },
+  tabText:    { fontSize: 12, fontWeight: '500', color: '#9CA3AF' },
   tabTextOn:  { color: '#111827', fontWeight: '700' },
+  badge:      { backgroundColor: '#EF4444', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
+  badgeText:  { color: '#fff', fontSize: 9, fontWeight: '800' },
 
-  card:      { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  card:      { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14,
+               shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   cardTitle: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 14 },
 
   monthRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
   monthRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  monthLabel:     { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  monthLabel:     { fontSize: 11, fontWeight: '600', color: '#6B7280' },
   barLabelIn:     { fontSize: 12, color: '#22C55E', fontWeight: '700', width: 14 },
   barLabelOut:    { fontSize: 12, color: '#EF4444', fontWeight: '700', width: 14 },
-  barAmt:         { fontSize: 11, color: '#9CA3AF', width: 72, textAlign: 'right' },
+  barAmt:         { fontSize: 10, color: '#9CA3AF', width: 68, textAlign: 'right' },
   balAmt:         { fontSize: 13, fontWeight: '700' },
   diffLabel:      { fontSize: 10, fontWeight: '600', marginTop: 2 },
 
@@ -333,4 +515,20 @@ const s = StyleSheet.create({
   distBar:  { flex: 1, height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, overflow: 'hidden' },
   distFill: { height: '100%', backgroundColor: '#7C3AED', borderRadius: 4 },
   distPct:  { fontSize: 11, fontWeight: '600', color: '#7C3AED', width: 30, textAlign: 'right' },
+
+  // Precios
+  prodRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  prodRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
+  prodName:      { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 3 },
+  prodMeta:      { fontSize: 10, color: '#9CA3AF', lineHeight: 14 },
+  priceUlt:      { fontSize: 14, fontWeight: '700', color: '#374151' },
+  alertBadge:    { backgroundColor: '#FEF2F2', color: '#DC2626', fontSize: 12,
+                   fontWeight: '700', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  priceSubtitle: { fontSize: 11, color: '#9CA3AF', marginBottom: 12, marginTop: -8 },
+
+  summaryRow:  { flexDirection: 'row', paddingTop: 4 },
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryNum:  { fontSize: 22, fontWeight: '800', color: '#111827' },
+  summaryLabel:{ fontSize: 11, color: '#6B7280', textAlign: 'center', marginTop: 2 },
+  summarySep:  { width: 1, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
 });

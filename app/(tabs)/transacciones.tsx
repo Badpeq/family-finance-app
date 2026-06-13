@@ -153,11 +153,16 @@ export default function Transacciones() {
       <SafeAreaView style={{ backgroundColor: '#F8F9FB' }}>
         <View style={styles.header}>
           <Text style={styles.title}>Movimientos</Text>
-          <TouchableOpacity style={styles.filterBtn} onPress={toggleShowInactive}>
-            <Text style={[styles.filterText, showInactive && { color: '#DC2626' }]}>
-              {showInactive ? 'Solo activos' : 'Ver todos'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.importBtn} onPress={() => router.push('/importar')}>
+              <Text style={styles.importText}>📥 Importar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterBtn} onPress={toggleShowInactive}>
+              <Text style={[styles.filterText, showInactive && { color: '#DC2626' }]}>
+                {showInactive ? 'Solo activos' : 'Ver todos'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -298,12 +303,15 @@ export default function Transacciones() {
 }
 
 const styles = StyleSheet.create({
-  header:     { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
-                paddingHorizontal:20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom:12,
-                borderBottomWidth:1, borderBottomColor:'#F3F4F6' },
-  title:      { fontSize:20, fontWeight:'800', color:'#111827' },
-  filterBtn:  { paddingHorizontal:12, paddingVertical:6, backgroundColor:'#F3F4F6', borderRadius:8 },
-  filterText: { fontSize:13, color:'#6B7280', fontWeight:'500' },
+  header:        { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
+                   paddingHorizontal:20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom:12,
+                   borderBottomWidth:1, borderBottomColor:'#F3F4F6' },
+  title:         { fontSize:20, fontWeight:'800', color:'#111827' },
+  headerActions: { flexDirection:'row', alignItems:'center', gap:8 },
+  importBtn:     { paddingHorizontal:11, paddingVertical:6, backgroundColor:'#EDE9FE', borderRadius:8 },
+  importText:    { fontSize:12, color:'#5B21B6', fontWeight:'700' },
+  filterBtn:     { paddingHorizontal:12, paddingVertical:6, backgroundColor:'#F3F4F6', borderRadius:8 },
+  filterText:    { fontSize:13, color:'#6B7280', fontWeight:'500' },
 
   empty:      { flex:1, justifyContent:'center', alignItems:'center', padding:40 },
   emptyTitle: { fontSize:16, fontWeight:'600', color:'#374151', marginBottom:16 },
