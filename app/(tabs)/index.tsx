@@ -430,18 +430,21 @@ export default function Dashboard() {
                 fn: () => { setShowQuickAdd(false); router.push(`/pagos?moneda=${currency}`); } },
               { icon:'🏦', label:'Movimiento de ahorro', sub:'Abono, retiro o interés',            bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,
                 fn: () => { setShowQuickAdd(false); router.push(`/ahorros?moneda=${currency}`); } },
-              { icon:'📷', label:'Importar con foto',    sub:'Voucher, ticket o estado de cuenta', bg:'#EDE9FE', fg:'#5B21B6', show: true,
+              { icon:'💳', label:'Estado de cuenta',     sub:'Pega texto de tu banco o app',       bg:'#EDE9FE', fg:'#5B21B6', show: true,
+                fn: () => { setShowQuickAdd(false); router.push('/importar?modo=voucher'); } },
+              { icon:'📷', label:'Ticket con foto',      sub:'Supermercado, farmacia, restaurant',  bg:'#FDF4FF', fg:'#7E22CE', show: true,
                 fn: async () => {
                   setShowQuickAdd(false);
                   setQuickOcring(true);
                   try {
                     const text = await pickAndOcr('camera');
-                    importStore.set(text, true);
+                    importStore.set(text, true, 'ticket');
                     router.push('/importar');
                   } catch (e: any) {
-                    if (e?.message !== 'cancelled') importStore.clear();
-                    // si cancela o error simplemente va a importar vacío
-                    if (e?.message !== 'cancelled') router.push('/importar');
+                    if (e?.message !== 'cancelled') {
+                      importStore.clear();
+                      router.push('/importar?modo=ticket');
+                    }
                   } finally {
                     setQuickOcring(false);
                   }

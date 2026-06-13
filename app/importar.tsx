@@ -4,7 +4,7 @@ import {
   ScrollView, ActivityIndicator, Modal, SafeAreaView,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { parseVoucherText, parseTicketItems, type ParsedLine, type ParsedItem } from '@/lib/parseVoucher';
 import { pickAndOcr, type OcrSource } from '@/lib/ocrImage';
@@ -24,7 +24,8 @@ type Mode = 'voucher' | 'ticket';
 type Stage = 'input' | 'preview' | 'items' | 'saving' | 'done';
 
 export default function Importar() {
-  const [mode,  setMode]  = useState<Mode>('voucher');
+  const { modo } = useLocalSearchParams<{ modo?: string }>();
+  const [mode,  setMode]  = useState<Mode>(modo === 'ticket' ? 'ticket' : 'voucher');
   const [stage, setStage] = useState<Stage>('input');
   const [texto, setTexto] = useState('');
 
@@ -46,22 +47,46 @@ export default function Importar() {
   const [error,  setError]  = useState('');
   const [saved,  setSaved]  = useState(0);
 
-  // Prefill desde Quick Add (foto capturada antes de navegar)
+  // Prefill desde Quick Add (foto capturada antes de navegar).
+  // Importante: pasamos el texto y modo directamente a parsearConTexto()
+  // para evitar el bug de closure donde handleParse() ve texto='' (estado inicial).
   useEffect(() => {
     const prefill = importStore.getText();
-    if (prefill) {
-      setTexto(prefill);
-      const auto = importStore.getAutoparse();
-      importStore.clear();
-      if (auto) {
-        // pequeño delay para que el state se asiente
-        setTimeout(() => handleParse(), 300);
-      }
-    }
+    if (!prefill) return;
+    const auto       = importStore.getAutoparse();
+    const storedMode = importStore.getMode();
+    importStore.clear();
+    setTexto(prefill);
+    setMode(storedMode);
+    if (auto) parsearConTexto(prefill, storedMode);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── OCR desde cámara o galería ───────────────────────────────────────────
+  // ── Parse (acepta texto y modo como parámetros para evitar closure stale) ──
+
+  const parsearConTexto = (input: string, currentMode: Mode) => {
+    setError('');
+    const txt = input.trim();
+    if (!txt) { setError('Pega el texto del voucher o ticket.'); return; }
+
+    if (currentMode === 'voucher') {
+      const parsed = parseVoucherText(txt);
+      if (parsed.length === 0) { setError('No se detectaron transacciones. Revisa el formato del texto.'); return; }
+      setLines(parsed);
+      setStage('preview');
+    } else {
+      const parsed = parseTicketItems(txt);
+      if (parsed.length === 0) { setError('No se detectaron productos. Revisa el formato del texto.'); return; }
+      setItems(parsed);
+      setTicketTotal(parsed.reduce((s, i) => s + i.precio_total, 0).toFixed(2));
+      setStage('items');
+    }
+  };
+
+  // Lee del estado actual (para el botón manual)
+  const handleParse = () => parsearConTexto(texto, mode);
+
+  // ── OCR desde cámara o galería — auto-parsea al terminar ────────────────
 
   const handleOcr = async (source: OcrSource) => {
     setError('');
@@ -69,31 +94,12 @@ export default function Importar() {
     try {
       const text = await pickAndOcr(source);
       setTexto(text);
+      // Auto-parsea con el texto recién recibido (sin depender del estado)
+      parsearConTexto(text, mode);
     } catch (e: any) {
       if (e?.message !== 'cancelled') setError(e?.message ?? 'Error al procesar la imagen.');
     } finally {
       setOcring(false);
-    }
-  };
-
-  // ── Parse ────────────────────────────────────────────────────────────────
-
-  const handleParse = () => {
-    setError('');
-    if (!texto.trim()) { setError('Pega el texto del voucher o ticket.'); return; }
-
-    if (mode === 'voucher') {
-      const parsed = parseVoucherText(texto);
-      if (parsed.length === 0) { setError('No se detectaron transacciones. Revisa el formato del texto.'); return; }
-      setLines(parsed);
-      setStage('preview');
-    } else {
-      const parsed = parseTicketItems(texto);
-      if (parsed.length === 0) { setError('No se detectaron productos. Revisa el formato del texto.'); return; }
-      setItems(parsed);
-      const tot = parsed.reduce((s, i) => s + i.precio_total, 0);
-      setTicketTotal(tot.toFixed(2));
-      setStage('items');
     }
   };
 
