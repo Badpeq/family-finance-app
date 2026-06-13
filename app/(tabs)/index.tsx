@@ -6,6 +6,8 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { pickAndOcr } from '@/lib/ocrImage';
+import { importStore } from '@/lib/importStore';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { toPEN } from '@/services/exchangeRate';
 
@@ -60,6 +62,7 @@ export default function Dashboard() {
 
   // Quick Add modal
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickOcring,  setQuickOcring]  = useState(false);
   // Presupuesto add modal
   const [showNewBudget,     setShowNewBudget]     = useState(false);
   const [newBudCat,         setNewBudCat]         = useState('');
@@ -405,8 +408,10 @@ export default function Dashboard() {
       </ScrollView>
 
       {/* ── FAB Quick Add ── */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowQuickAdd(true)} activeOpacity={0.85}>
-        <Text style={styles.fabText}>＋ Quick Add</Text>
+      <TouchableOpacity style={styles.fab} onPress={() => setShowQuickAdd(true)} activeOpacity={0.85} disabled={quickOcring}>
+        {quickOcring
+          ? <ActivityIndicator color="#fff" />
+          : <Text style={styles.fabText}>＋ Quick Add</Text>}
       </TouchableOpacity>
 
       {/* ── Quick Add Bottom Sheet ── */}
@@ -425,6 +430,23 @@ export default function Dashboard() {
                 fn: () => { setShowQuickAdd(false); router.push(`/pagos?moneda=${currency}`); } },
               { icon:'🏦', label:'Movimiento de ahorro', sub:'Abono, retiro o interés',            bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,
                 fn: () => { setShowQuickAdd(false); router.push(`/ahorros?moneda=${currency}`); } },
+              { icon:'📷', label:'Importar con foto',    sub:'Voucher, ticket o estado de cuenta', bg:'#EDE9FE', fg:'#5B21B6', show: true,
+                fn: async () => {
+                  setShowQuickAdd(false);
+                  setQuickOcring(true);
+                  try {
+                    const text = await pickAndOcr('camera');
+                    importStore.set(text, true);
+                    router.push('/importar');
+                  } catch (e: any) {
+                    if (e?.message !== 'cancelled') importStore.clear();
+                    // si cancela o error simplemente va a importar vacío
+                    if (e?.message !== 'cancelled') router.push('/importar');
+                  } finally {
+                    setQuickOcring(false);
+                  }
+                },
+              },
             ].filter(opt => opt.show).map((opt, i, arr) => (
               <View key={opt.label}>
                 <TouchableOpacity style={styles.sheetOpt} onPress={opt.fn}>

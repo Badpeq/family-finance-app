@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, ActivityIndicator, Modal, SafeAreaView,
@@ -7,6 +7,8 @@ import {
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { parseVoucherText, parseTicketItems, type ParsedLine, type ParsedItem } from '@/lib/parseVoucher';
+import { pickAndOcr, type OcrSource } from '@/lib/ocrImage';
+import { importStore } from '@/lib/importStore';
 
 const CATS = [
   'Alimentación','Transporte','Vivienda','Entretenimiento',
@@ -40,8 +42,39 @@ export default function Importar() {
   const [pickerIdx,     setPickerIdx]     = useState<number | null>(null);
   const [showCatPicker, setShowCatPicker] = useState(false);
 
+  const [ocring, setOcring] = useState(false);
   const [error,  setError]  = useState('');
   const [saved,  setSaved]  = useState(0);
+
+  // Prefill desde Quick Add (foto capturada antes de navegar)
+  useEffect(() => {
+    const prefill = importStore.getText();
+    if (prefill) {
+      setTexto(prefill);
+      const auto = importStore.getAutoparse();
+      importStore.clear();
+      if (auto) {
+        // pequeño delay para que el state se asiente
+        setTimeout(() => handleParse(), 300);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── OCR desde cámara o galería ───────────────────────────────────────────
+
+  const handleOcr = async (source: OcrSource) => {
+    setError('');
+    setOcring(true);
+    try {
+      const text = await pickAndOcr(source);
+      setTexto(text);
+    } catch (e: any) {
+      if (e?.message !== 'cancelled') setError(e?.message ?? 'Error al procesar la imagen.');
+    } finally {
+      setOcring(false);
+    }
+  };
 
   // ── Parse ────────────────────────────────────────────────────────────────
 
@@ -232,8 +265,29 @@ export default function Importar() {
               )}
             </View>
 
+            {/* Captura con cámara o galería */}
+            <View style={s.photoRow}>
+              <TouchableOpacity style={s.photoBtn} onPress={() => handleOcr('camera')} disabled={ocring}>
+                <Text style={s.photoIcon}>📷</Text>
+                <Text style={s.photoBtnText}>Tomar foto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.photoBtn} onPress={() => handleOcr('gallery')} disabled={ocring}>
+                <Text style={s.photoIcon}>🖼️</Text>
+                <Text style={s.photoBtnText}>Elegir foto</Text>
+              </TouchableOpacity>
+            </View>
+
+            {ocring && (
+              <View style={s.ocrOverlay}>
+                <ActivityIndicator color="#7C3AED" size="large" />
+                <Text style={s.ocrText}>Leyendo imagen con Google Vision...</Text>
+              </View>
+            )}
+
             {/* Zona de pegado */}
-            <Text style={s.label}>Pega el texto aquí</Text>
+            <View style={s.orRow}>
+              <View style={s.orLine} /><Text style={s.orText}>o pega el texto manualmente</Text><View style={s.orLine} />
+            </View>
             <TextInput
               style={s.textArea}
               multiline
@@ -425,6 +479,18 @@ const s = StyleSheet.create({
   btn:     { backgroundColor: '#7C3AED', borderRadius: 12, height: 50,
              justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  photoRow:   { flexDirection: 'row', gap: 10, marginTop: 4, marginBottom: 4 },
+  photoBtn:   { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                gap: 6, backgroundColor: '#F3F4F6', borderRadius: 12, paddingVertical: 14,
+                borderWidth: 1.5, borderColor: '#E5E7EB' },
+  photoIcon:  { fontSize: 20 },
+  photoBtnText:{ fontSize: 13, fontWeight: '600', color: '#374151' },
+  ocrOverlay: { alignItems: 'center', gap: 10, paddingVertical: 20 },
+  ocrText:    { fontSize: 13, color: '#7C3AED', fontWeight: '500' },
+  orRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 2 },
+  orLine:     { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
+  orText:     { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
 
   modeRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
   modeBtn: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 14, padding: 14,
