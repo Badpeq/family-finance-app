@@ -148,7 +148,7 @@ const SKIP_TICKET  = /^(subtotal|total|igv|itbm|itv|descuento|ruc|ticket|gracias
 const IS_PRICE     = /^[Ss]\/\.?\s*([\d]+[.,]\d{2})$|^([\d]+[.,]\d{2})$/;
 const IS_QTY_ONLY  = /^[xX]\s*\d+$|^\d+\s*[xX]$/;
 // "2 X @ 4.50"  "2 X or 4.50"  "2x4.50"
-const IS_QTY_PRICE = /^(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?([\d]+[.,]\d{2})$/i;
+const IS_QTY_PRICE = /^(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?\s*([\d]+[.,]\d{2})$/i;
 // Leading EAN-8 to EAN-14 barcode: "7750571002165 SALE CHR ESP"
 const BARCODE_PREFIX = /^\d{8,14}\s+/;
 
@@ -228,7 +228,7 @@ export function parseTicketItems(text: string): ParsedItem[] {
     let precio_unitario = precio_total;
 
     // "2 X @ 4.50"  "2 X or 4.50"  "2x4.50"
-    const qtyPuMatch = raw.match(/(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?([\d]+[.,]\d{2})/i);
+    const qtyPuMatch = raw.match(/(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?\s*([\d]+[.,]\d{2})/i);
     if (qtyPuMatch) {
       cantidad        = parseInt(qtyPuMatch[1], 10);
       precio_unitario = parseFloat(qtyPuMatch[2].replace(',', '.'));
@@ -242,7 +242,7 @@ export function parseTicketItems(text: string): ParsedItem[] {
 
     let producto = raw
       .replace(BARCODE_PREFIX, '')                                      // strip EAN barcode
-      .replace(/(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?[\d]+[.,]\d{2}/gi, '') // strip qty+price
+      .replace(/(\d+)\s*[xX\*]\s*(?:[@]|or\s+|a\s+)?\s*[\d]+[.,]\d{2}/gi, '') // strip qty+price
       .replace(/[xX]\s*\d+/gi, '')                                     // strip standalone qty
       .replace(/[Ss]\/\.?\s*/g, '')                                    // strip S/.
       .replace(/([\d]+[.,]\d{2})\s*$/, '')                             // strip trailing price
