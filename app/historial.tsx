@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useCategorias, BASE_INCOME_CATS, iconForCat } from '@/hooks/useCategorias';
 
 interface Tx {
   id: string;
@@ -18,19 +19,11 @@ interface Tx {
   cuenta_ahorro_id: string | null;
   activo: boolean;
   creado_en: string;
+  fecha: string | null;
+  moneda: string | null;
 }
 
 const PAGE = 30;
-
-const ICON: Record<string, string> = {
-  Sueldo: '💼', Freelance: '💻', Inversiones: '📈', Negocio: '🏪',
-  Ahorro: '🏦', 'Retiro Ahorro': '💰', 'Pago Tarjeta': '💳', 'Abono Préstamo': '📋',
-  Alimentación: '🛒', Transporte: '🚗', Vivienda: '🏠', Entretenimiento: '🎬',
-  Salud: '💊', Educación: '📚', Ropa: '👕', Servicios: '⚡', Otros: '📦',
-};
-
-const GASTO_CATS  = ['Alimentación','Transporte','Vivienda','Entretenimiento','Salud','Educación','Ropa','Servicios','Otros'];
-const INGRESO_CATS = ['Sueldo','Freelance','Inversiones','Negocio','Otros'];
 
 const SYM: Record<string, string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
 
@@ -42,6 +35,8 @@ export default function Historial() {
   const [page,        setPage]        = useState(0);
   const [hasMore,     setHasMore]     = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const { categorias: catGasto } = useCategorias();
 
   // Edit modal
   const [editing,       setEditing]       = useState<Tx | null>(null);
@@ -71,6 +66,12 @@ export default function Historial() {
     }, [])
   );
 
+  const fmtTx = (tx: Tx) => {
+    const mon = tx.moneda ?? currency;
+    const s   = SYM[mon] ?? mon;
+    return `${s} ${Number(tx.monto).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const fmt = (n: number) => {
     const s = SYM[currency] ?? currency;
     return `${s} ${n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -83,8 +84,9 @@ export default function Historial() {
 
     let q = supabase
       .from('transacciones')
-      .select('id, tipo, monto, categoria, descripcion, metodo_pago, tarjeta_id, prestamo_id, cuenta_ahorro_id, activo, creado_en')
+      .select('id, tipo, monto, categoria, descripcion, metodo_pago, tarjeta_id, prestamo_id, cuenta_ahorro_id, activo, creado_en, fecha, moneda')
       .eq('user_id', user.id)
+      .order('fecha', { ascending: false })
       .order('creado_en', { ascending: false })
       .range(pageNum * PAGE, (pageNum + 1) * PAGE - 1);
 
@@ -174,7 +176,7 @@ export default function Historial() {
     setDeactivating(false);
   };
 
-  const cats = editing?.tipo === 'ingreso' ? INGRESO_CATS : GASTO_CATS;
+  const cats = editing?.tipo === 'ingreso' ? BASE_INCOME_CATS : catGasto;
 
   const deactivateNote = () => {
     if (!confirmTx) return '';
@@ -229,7 +231,7 @@ export default function Historial() {
           renderItem={({ item: tx }) => (
             <View style={[styles.txRow, !tx.activo && styles.txInactive]}>
               <View style={styles.txIconWrap}>
-                <Text style={styles.txIconText}>{ICON[tx.categoria] ?? '📦'}</Text>
+                <Text style={styles.txIconText}>{iconForCat(tx.categoria, catGasto)}</Text>
               </View>
               <View style={styles.txInfo}>
                 <Text style={styles.txDesc} numberOfLines={1}>
@@ -238,10 +240,11 @@ export default function Historial() {
                 <Text style={styles.txMeta}>
                   {tx.categoria}
                   {' · '}
-                  {new Date(tx.creado_en).toLocaleDateString('es-PE', {
+                  {new Date(tx.fecha ?? tx.creado_en).toLocaleDateString('es-PE', {
                     day: '2-digit', month: 'short', year: '2-digit',
                   })}
                   {tx.metodo_pago === 'tarjeta' ? ' · 💳' : ''}
+                  {tx.moneda && tx.moneda !== 'PEN' ? ` · ${tx.moneda}` : ''}
                   {!tx.activo ? ' · desactivado' : ''}
                 </Text>
               </View>
@@ -250,7 +253,7 @@ export default function Historial() {
                 tx.tipo === 'ingreso' ? styles.green : styles.red,
                 !tx.activo && styles.inactive,
               ]}>
-                {tx.tipo === 'ingreso' ? '+' : '−'}{fmt(Number(tx.monto))}
+                {tx.tipo === 'ingreso' ? '+' : '−'}{fmtTx(tx)}
               </Text>
               {tx.activo && (
                 <View style={styles.txActions}>
@@ -328,12 +331,12 @@ export default function Historial() {
             <Text style={styles.sheetTitle}>Seleccionar Categoría</Text>
             {cats.map(cat => (
               <TouchableOpacity
-                key={cat}
+                key={cat.nombre}
                 style={styles.catRow}
-                onPress={() => { setEditCat(cat); setShowCatPicker(false); }}
+                onPress={() => { setEditCat(cat.nombre); setShowCatPicker(false); }}
               >
-                <Text style={styles.catText}>{ICON[cat] ?? '📦'}  {cat}</Text>
-                {editCat === cat && <Text style={styles.check}>✓</Text>}
+                <Text style={styles.catText}>{cat.icono}  {cat.nombre}</Text>
+                {editCat === cat.nombre && <Text style={styles.check}>✓</Text>}
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={[styles.cancelBtn, { marginTop: 8 }]} onPress={() => setShowCatPicker(false)}>

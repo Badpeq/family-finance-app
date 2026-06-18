@@ -10,18 +10,12 @@ import { pickAndOcr } from '@/lib/ocrImage';
 import { importStore } from '@/lib/importStore';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { toPEN } from '@/services/exchangeRate';
+import { useCategorias, iconForCat } from '@/hooks/useCategorias';
 
 interface Profile     { nombre: string; moneda_base: string; modulo_ahorros: boolean; modulo_prestamos: boolean; modulo_tarjetas: boolean; presupuesto_template: Record<string,number> | null }
 interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; moneda?: string; tipo_cambio?: number }
 interface Presupuesto { categoria: string; monto_limite: number; seguimiento_diario: boolean }
 
-const ICON: Record<string, string> = {
-  Sueldo:'💼', Bono:'🎁', Freelance:'💻', Inversiones:'📈', Negocio:'🏪',
-  Ahorro:'🏦', 'Retiro Ahorro':'💰', 'Pago Tarjeta':'💳', 'Abono Préstamo':'📋',
-  Alimentación:'🛒', Transporte:'🚗', Vivienda:'🏠', Entretenimiento:'🎬',
-  Salud:'💊', Educación:'📚', Ropa:'👕', Servicios:'⚡', Restaurantes:'🍽️', Otros:'📦',
-};
-const CATS_GASTO = ['Alimentación','Transporte','Vivienda','Entretenimiento','Salud','Educación','Ropa','Servicios','Restaurantes','Otros'];
 const SYM: Record<string,string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
 const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
@@ -59,6 +53,8 @@ export default function Dashboard() {
   const [gastosPorCat, setGastosPorCat] = useState<Record<string,number>>({});
   const [gastosHoy,    setGastosHoy]    = useState<Record<string,number>>({});
   const [loading,      setLoading]      = useState(true);
+
+  const { categorias: catGasto } = useCategorias();
 
   // Quick Add modal
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -297,7 +293,7 @@ export default function Dashboard() {
                   return (
                     <View key={item.categoria} style={[styles.budgetItem, { borderLeftWidth: 3, borderLeftColor: color }]}>
                       <View style={styles.budgetItemTop}>
-                        <Text style={styles.budgetCat}>{ICON[item.categoria] ?? '📦'} {item.categoria}</Text>
+                        <Text style={styles.budgetCat}>{iconForCat(item.categoria, catGasto)} {item.categoria}</Text>
                         <Text style={[styles.budgetPct, { color }]}>
                           {SYM[currency] ?? currency} {item.remaining.toFixed(2)} hoy
                         </Text>
@@ -341,7 +337,7 @@ export default function Dashboard() {
                 <TouchableOpacity key={p.categoria} style={styles.budgetItem} activeOpacity={0.75}
                   onPress={() => router.push(`/categoria-detalle?categoria=${encodeURIComponent(p.categoria)}&presupuesto=${p.monto_limite}&moneda=${currency}`)}>
                   <View style={styles.budgetItemTop}>
-                    <Text style={styles.budgetCat}>{ICON[p.categoria] ?? '📦'} {p.categoria}{p.seguimiento_diario ? ' ⏱' : ''}</Text>
+                    <Text style={styles.budgetCat}>{iconForCat(p.categoria, catGasto)} {p.categoria}{p.seguimiento_diario ? ' ⏱' : ''}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Text style={[styles.budgetPct, { color }]}>{pctInt}%</Text>
                       <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -384,7 +380,7 @@ export default function Dashboard() {
                   <View key={tx.id}>
                     <View style={styles.txRow}>
                       <View style={styles.txIconBox}>
-                        <Text style={{ fontSize: 18 }}>{ICON[tx.categoria] ?? '📦'}</Text>
+                        <Text style={{ fontSize: 18 }}>{iconForCat(tx.categoria, catGasto)}</Text>
                       </View>
                       <View style={styles.txBody}>
                         <Text style={styles.txDesc} numberOfLines={1}>{tx.descripcion || tx.categoria}</Text>
@@ -393,7 +389,10 @@ export default function Dashboard() {
                         </Text>
                       </View>
                       <Text style={[styles.txAmt, tx.tipo === 'ingreso' ? styles.green : styles.red]}>
-                        {tx.tipo === 'ingreso' ? '+' : '−'}{fmt(Number(tx.monto), currency)}
+                        {tx.tipo === 'ingreso' ? '+' : '−'}
+                        {(tx as any).moneda && (tx as any).moneda !== 'PEN'
+                          ? `${SYM[(tx as any).moneda] ?? (tx as any).moneda} ${Number(tx.monto).toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2})}`
+                          : fmt(Number(tx.monto), currency)}
                       </Text>
                     </View>
                     {i < recent.length - 1 && <View style={styles.txSep} />}
@@ -486,7 +485,7 @@ export default function Dashboard() {
               <Text style={styles.formLabel}>Categoría *</Text>
               <TouchableOpacity style={styles.formInput} onPress={() => setShowBudPicker(true)}>
                 <Text style={newBudCat ? styles.formValText : styles.formPlaceholder}>
-                  {newBudCat ? `${ICON[newBudCat] ?? '📦'} ${newBudCat}` : 'Selecciona una categoría'}
+                  {newBudCat ? `${iconForCat(newBudCat, catGasto)} ${newBudCat}` : 'Selecciona una categoría'}
                 </Text>
               </TouchableOpacity>
               <Text style={styles.formLabel}>Límite mensual ({SYM[currency] ?? currency}) *</Text>
@@ -528,13 +527,13 @@ export default function Dashboard() {
                 <Text style={styles.formClose}>Cerrar</Text>
               </TouchableOpacity>
             </View>
-            {CATS_GASTO.map((cat, i) => (
-              <View key={cat}>
-                <TouchableOpacity style={styles.catOpt} onPress={() => { setNewBudCat(cat); setShowBudPicker(false); }}>
-                  <Text style={styles.catOptText}>{ICON[cat] ?? '📦'} {cat}</Text>
-                  {newBudCat === cat && <Text style={{ color: '#7C3AED', fontSize: 18 }}>✓</Text>}
+            {catGasto.map((cat, i) => (
+              <View key={cat.nombre}>
+                <TouchableOpacity style={styles.catOpt} onPress={() => { setNewBudCat(cat.nombre); setShowBudPicker(false); }}>
+                  <Text style={styles.catOptText}>{cat.icono} {cat.nombre}</Text>
+                  {newBudCat === cat.nombre && <Text style={{ color: '#7C3AED', fontSize: 18 }}>✓</Text>}
                 </TouchableOpacity>
-                {i < CATS_GASTO.length - 1 && <View style={styles.sheetSep} />}
+                {i < catGasto.length - 1 && <View style={styles.sheetSep} />}
               </View>
             ))}
           </View>

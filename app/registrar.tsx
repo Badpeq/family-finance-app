@@ -7,6 +7,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
+import { useCategorias, BASE_INCOME_CATS } from '@/hooks/useCategorias';
 
 // ── Types ─────────────────────────────────────────────────────
 type GastoTab   = 'unica' | 'recurrente' | 'cuotas';
@@ -27,10 +28,6 @@ const GASTO_TABS: { key: GastoTab; label: string }[] = [
   { key: 'cuotas',     label: 'Compra en\nCuotas' },
 ];
 
-const CATEGORIAS_INGRESO = ['Sueldo', 'Freelance', 'Inversiones', 'Negocio', 'Ahorro', 'Otros'];
-const CATEGORIAS_GASTO   = ['Alimentación', 'Transporte', 'Vivienda', 'Entretenimiento',
-                             'Salud', 'Educación', 'Ropa', 'Servicios', 'Otros'];
-
 const CURRENCY_SYMBOL: Record<string, string> = {
   PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$',
   COP: '$',  MXN: '$', ARS: '$', CLP: '$',
@@ -45,6 +42,22 @@ function parseMes(input: string): string | null {
   const m = parseInt(mm, 10), y = parseInt(yyyy, 10);
   if (m < 1 || m > 12 || y < 2020 || y > 2100) return null;
   return `${yyyy}-${mm}-01`;
+}
+
+function parseFecha(input: string): string | null {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(input.trim())) return null;
+  const [dd, mm, yyyy] = input.split('/');
+  const d = parseInt(dd, 10), m = parseInt(mm, 10), y = parseInt(yyyy, 10);
+  if (d < 1 || d > 31 || m < 1 || m > 12 || y < 2020 || y > 2100) return null;
+  return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+}
+
+function todayFormatted(): string {
+  const now = new Date();
+  const dd   = String(now.getDate()).padStart(2, '0');
+  const mm   = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function fmtDeuda(simbolo: string, monto: number, linea: number) {
@@ -65,9 +78,12 @@ export default function Registrar() {
 
   // ── Multi-moneda
   const { rate } = useExchangeRate();
-  // txMoneda: moneda en la que el usuario está ingresando este movimiento
   const [txMoneda, setTxMoneda] = useState<'PEN'|'USD'>('PEN');
   const simbolo = CURRENCY_SYMBOL[txMoneda] ?? 'S/';
+
+  // ── Categorías dinámicas
+  const { categorias: catGasto, loading: loadingCats } = useCategorias();
+  const catIngreso = BASE_INCOME_CATS;
 
   // ── Tab state
   const [gastoTab, setGastoTab] = useState<GastoTab>('unica');
@@ -84,9 +100,10 @@ export default function Registrar() {
   const [tarjetas,     setTarjetas]     = useState<Tarjeta[]>([]);
   const [nuevaTarjeta, setNuevaTarjeta] = useState({ banco: '', nombre: '', linea: '', cierre: '', deudaInicial: '' });
 
-  // ── Forms
-  const [iU, setIU] = useState({ monto: '', categoria: '', descripcion: '' });
-  const [gU, setGU] = useState({ monto: '', categoria: '', descripcion: '', metodoPago: 'efectivo' as MetodoPago, tarjetaId: '' });
+  // ── Forms (añadido campo fecha a cada uno)
+  const today = todayFormatted();
+  const [iU, setIU] = useState({ monto: '', categoria: '', descripcion: '', fecha: today });
+  const [gU, setGU] = useState({ monto: '', categoria: '', descripcion: '', metodoPago: 'efectivo' as MetodoPago, tarjetaId: '', fecha: today });
   const [gR, setGR] = useState({ monto: '', categoria: '', descripcion: '', diaCobro: '', mesInicio: '', mesFin: '' });
   const [gC, setGC] = useState({ descripcion: '', montoTotal: '', totalCuotas: '', categoria: '', diaCobro: '', mesInicio: '', metodoPago: 'efectivo' as MetodoPago, tarjetaId: '' });
 
@@ -105,10 +122,10 @@ export default function Registrar() {
       if (mounted && data) setTarjetas(data);
     })();
     return () => { mounted = false; };
-  }, []); // esIngreso is constant for the lifetime of this screen
+  }, []); // esIngreso es constante durante el ciclo de vida de esta pantalla
 
   // ── Derived
-  const pickerCategorias = esIngreso ? CATEGORIAS_INGRESO : CATEGORIAS_GASTO;
+  const pickerCategorias = esIngreso ? catIngreso : catGasto;
   const categoriaActual  = esIngreso
     ? iU.categoria
     : gastoTab === 'unica' ? gU.categoria
@@ -172,17 +189,23 @@ export default function Registrar() {
     if (!user) { setError('Sesión no encontrada.'); setLoading(false); return; }
 
     let dbError: { message: string } | null = null;
-
-    const tcHoy = rate.venta; // tasa venta PEN/USD del día
+    const tcHoy = rate.venta;
 
     if (esIngreso) {
       const m = parseMonto(iU.monto);
       if (isNaN(m) || m <= 0) { setError('Ingresa un monto válido.'); setLoading(false); return; }
       if (!iU.categoria)       { setError('Selecciona una categoría.'); setLoading(false); return; }
+      const fechaParsed = parseFecha(iU.fecha);
+      if (!fechaParsed)         { setError('Fecha inválida. Usa DD/MM/AAAA.'); setLoading(false); return; }
       const { error: e } = await supabase.from('transacciones').insert({
-        user_id: user.id, tipo: 'ingreso', monto: m,
-        categoria: iU.categoria, descripcion: iU.descripcion.trim() || null,
-        moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
+        user_id:     user.id,
+        tipo:        'ingreso',
+        monto:       m,
+        categoria:   iU.categoria,
+        descripcion: iU.descripcion.trim() || null,
+        moneda:      txMoneda,
+        tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
+        fecha:       fechaParsed,
       });
       dbError = e;
 
@@ -191,12 +214,20 @@ export default function Registrar() {
       if (isNaN(m) || m <= 0)                           { setError('Ingresa un monto válido.'); setLoading(false); return; }
       if (!gU.categoria)                                 { setError('Selecciona una categoría.'); setLoading(false); return; }
       if (gU.metodoPago === 'tarjeta' && !gU.tarjetaId) { setError('Selecciona una tarjeta de crédito.'); setLoading(false); return; }
+      const fechaParsed = parseFecha(gU.fecha);
+      if (!fechaParsed)                                  { setError('Fecha inválida. Usa DD/MM/AAAA.'); setLoading(false); return; }
       const { error: e } = await supabase.from('transacciones').insert({
-        user_id: user.id, tipo: 'gasto', monto: m,
-        categoria: gU.categoria, descripcion: gU.descripcion.trim() || null,
-        metodo_pago: gU.metodoPago,
-        tarjeta_id: gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
-        moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
+        user_id:       user.id,
+        tipo:          'gasto',
+        monto:         m,
+        categoria:     gU.categoria,
+        descripcion:   gU.descripcion.trim() || null,
+        metodo_pago:   gU.metodoPago,
+        tarjeta_id:    gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
+        moneda:        txMoneda,
+        tipo_cambio:   txMoneda === 'USD' ? tcHoy : 1.0,
+        fecha:         fechaParsed,
+        es_gasto_unico: true,
       });
       dbError = e;
 
@@ -211,13 +242,18 @@ export default function Registrar() {
       if (!mi)                             { setError('Mes de inicio inválido. Usa MM/AAAA.'); setLoading(false); return; }
       if (gR.mesFin.trim() && !mf)         { setError('Mes de fin inválido. Usa MM/AAAA.'); setLoading(false); return; }
       const { error: e } = await supabase.from('gastos_recurrentes').insert({
-        user_id: user.id, monto: m, categoria: gR.categoria,
+        user_id:     user.id,
+        monto:       m,
+        categoria:   gR.categoria,
         descripcion: gR.descripcion.trim() || null,
-        dia_cobro: dc, mes_inicio: mi, mes_fin: mf,
+        dia_cobro:   dc,
+        mes_inicio:  mi,
+        mes_fin:     mf,
       });
       dbError = e;
 
     } else {
+      // Cuotas
       const mt = parseMonto(gC.montoTotal);
       const tc = parseInt(gC.totalCuotas, 10);
       const dc = parseInt(gC.diaCobro, 10);
@@ -230,12 +266,16 @@ export default function Registrar() {
       if (!mi)                                            { setError('Mes de inicio inválido. Usa MM/AAAA.'); setLoading(false); return; }
       if (gC.metodoPago === 'tarjeta' && !gC.tarjetaId) { setError('Selecciona una tarjeta de crédito.'); setLoading(false); return; }
       const { error: e } = await supabase.from('compras_cuotas').insert({
-        user_id: user.id, descripcion: gC.descripcion.trim(), categoria: gC.categoria,
-        monto_total: mt, total_cuotas: tc,
-        monto_cuota: Math.round((mt / tc) * 100) / 100,
-        dia_cobro: dc, mes_inicio: mi,
-        metodo_pago: gC.metodoPago,
-        tarjeta_id: gC.metodoPago === 'tarjeta' ? gC.tarjetaId : null,
+        user_id:       user.id,
+        descripcion:   gC.descripcion.trim(),
+        categoria:     gC.categoria,
+        monto_total:   mt,
+        total_cuotas:  tc,
+        monto_cuota:   Math.round((mt / tc) * 100) / 100,
+        dia_cobro:     dc,
+        mes_inicio:    mi,
+        metodo_pago:   gC.metodoPago,
+        tarjeta_id:    gC.metodoPago === 'tarjeta' ? gC.tarjetaId : null,
       });
       dbError = e;
     }
@@ -289,6 +329,22 @@ export default function Registrar() {
         )}
         <Text style={styles.chevron}>›</Text>
       </TouchableOpacity>
+    </>
+  );
+
+  const FechaField = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+    <>
+      <Text style={styles.label}>Fecha <Text style={styles.optional}>(DD/MM/AAAA)</Text></Text>
+      <TextInput
+        style={styles.input}
+        placeholder={todayFormatted()}
+        placeholderTextColor="#9CA3AF"
+        keyboardType="numbers-and-punctuation"
+        value={value}
+        onChangeText={onChange}
+        editable={!loading}
+        maxLength={10}
+      />
     </>
   );
 
@@ -371,12 +427,15 @@ export default function Registrar() {
                 editable={!loading} autoFocus />
             </View>
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
               <Text style={iU.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {iU.categoria || 'Selecciona una categoría'}
+                {iU.categoria
+                  ? `${catIngreso.find(c=>c.nombre===iU.categoria)?.icono ?? '📦'} ${iU.categoria}`
+                  : 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
+            <FechaField value={iU.fecha} onChange={v => setIU(s => ({ ...s, fecha: v }))} />
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Sueldo de julio"
               placeholderTextColor="#9CA3AF" value={iU.descripcion}
@@ -388,6 +447,9 @@ export default function Registrar() {
         {/* ── Gasto Único ── */}
         {!esIngreso && gastoTab === 'unica' && (
           <>
+            <View style={styles.hint}>
+              <Text style={styles.hintText}>Gasto puntual no recurrente. Se marcará como <Text style={{ fontWeight: '700' }}>único</Text> para excluirlo del prorrateo diario.</Text>
+            </View>
             <Text style={styles.label}>Monto</Text>
             <View style={styles.montoWrap}>
               <Text style={[styles.montoPrefix, { color: accent }]}>{simbolo}</Text>
@@ -397,9 +459,11 @@ export default function Registrar() {
                 editable={!loading} autoFocus />
             </View>
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
               <Text style={gU.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {gU.categoria || 'Selecciona una categoría'}
+                {gU.categoria
+                  ? `${catGasto.find(c=>c.nombre===gU.categoria)?.icono ?? '📦'} ${gU.categoria}`
+                  : 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
@@ -410,6 +474,7 @@ export default function Registrar() {
               onTarjeta={() => setGU(s => ({ ...s, metodoPago: 'tarjeta' }))}
             />
             {gU.metodoPago === 'tarjeta' && <TarjetaSelector />}
+            <FechaField value={gU.fecha} onChange={v => setGU(s => ({ ...s, fecha: v }))} />
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Supermercado del lunes"
               placeholderTextColor="#9CA3AF" value={gU.descripcion}
@@ -433,9 +498,11 @@ export default function Registrar() {
                 editable={!loading} autoFocus />
             </View>
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
               <Text style={gR.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {gR.categoria || 'Selecciona una categoría'}
+                {gR.categoria
+                  ? `${catGasto.find(c=>c.nombre===gR.categoria)?.icono ?? '📦'} ${gR.categoria}`
+                  : 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
@@ -507,9 +574,11 @@ export default function Registrar() {
               </View>
             )}
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
               <Text style={gC.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {gC.categoria || 'Selecciona una categoría'}
+                {gC.categoria
+                  ? `${catGasto.find(c=>c.nombre===gC.categoria)?.icono ?? '📦'} ${gC.categoria}`
+                  : 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
@@ -558,16 +627,21 @@ export default function Registrar() {
                 <Text style={[styles.closeBtn, { color: accent }]}>Cerrar</Text>
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={pickerCategorias} keyExtractor={item => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.option} onPress={() => selectCategoria(item)}>
-                  <Text style={styles.optionText}>{item}</Text>
-                  {categoriaActual === item && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
-                </TouchableOpacity>
-              )}
-              ItemSeparatorComponent={() => <View style={styles.sep} />}
-            />
+            {loadingCats ? (
+              <ActivityIndicator color={accent} style={{ margin: 24 }} />
+            ) : (
+              <FlatList
+                data={pickerCategorias}
+                keyExtractor={item => item.nombre}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.option} onPress={() => selectCategoria(item.nombre)}>
+                    <Text style={styles.optionText}>{item.icono} {item.nombre}</Text>
+                    {categoriaActual === item.nombre && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
+                  </TouchableOpacity>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.sep} />}
+              />
+            )}
           </View>
         </SafeAreaView>
       </Modal>
@@ -785,7 +859,6 @@ const styles = StyleSheet.create({
   sep:        { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
   emptyMsg:   { fontSize: 14, color: '#6B7280', textAlign: 'center' },
 
-  // Multi-moneda
   currencyRow:    { flexDirection:'row', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap' },
   currencyLabel:  { fontSize:13, fontWeight:'600', color:'#374151' },
   currencyToggle: { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, gap:0 },

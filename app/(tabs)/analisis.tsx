@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { ICON_MAP } from '@/hooks/useCategorias';
 
 interface MonthSummary {
   mes:      string;
@@ -20,6 +21,13 @@ interface ProductoPrecio {
   precioAvg: number;
   pctChange: number;
   alerta:    boolean;
+}
+
+interface DeudaCapa {
+  categoria:           string;
+  deuda_real:          number;
+  deuda_presupuestada: number;
+  deuda_proyectada:    number;
 }
 
 const SYM: Record<string, string> = {
@@ -67,11 +75,17 @@ function Sparkline({ values, alerta }: { values: number[]; alerta: boolean }) {
 }
 
 export default function Analisis() {
-  const [summaries, setSummaries]   = useState<MonthSummary[]>([]);
-  const [productos, setProductos]   = useState<ProductoPrecio[]>([]);
-  const [currency,  setCurrency]    = useState('PEN');
-  const [loading,   setLoading]     = useState(true);
-  const [tab,       setTab]         = useState<'meses' | 'categorias' | 'precios'>('meses');
+  const [summaries,   setSummaries]   = useState<MonthSummary[]>([]);
+  const [productos,   setProductos]   = useState<ProductoPrecio[]>([]);
+  const [deudaCapas,  setDeudaCapas]  = useState<DeudaCapa[]>([]);
+  const [loadingDeuda,setLoadingDeuda]= useState(false);
+  const [currency,    setCurrency]    = useState('PEN');
+  const [loading,     setLoading]     = useState(true);
+  const [tab,         setTab]         = useState<'meses' | 'categorias' | 'precios' | 'deuda'>('meses');
+  const [mesDeuda,    setMesDeuda]    = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-01`;
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -97,13 +111,15 @@ export default function Analisis() {
         const cur = (profRes.data as any)?.moneda_base ?? 'PEN';
         setCurrency(cur);
 
-        // ── Build monthly summaries ────────────────────────────────────────
+        // ── Build monthly summaries (convirtiendo a PEN) ───────────────────
         const txs = (txRes.data ?? []) as any[];
         const byMonth: Record<string, MonthSummary> = {};
         txs.forEach(tx => {
-          const mes = tx.creado_en.slice(0, 7);
+          const mes = (tx.fecha ?? tx.creado_en).slice(0, 7);
           if (!byMonth[mes]) byMonth[mes] = { mes, ingresos: 0, gastos: 0, porCat: {} };
-          const amt = Number(tx.monto);
+          // Convertir a PEN: si moneda = USD se usa tipo_cambio guardado; si falta, 1
+          const raw = Number(tx.monto);
+          const amt = tx.moneda === 'USD' ? raw * (Number(tx.tipo_cambio) || 1) : raw;
           if (tx.tipo === 'ingreso') byMonth[mes].ingresos += amt;
           else {
             byMonth[mes].gastos += amt;
@@ -167,6 +183,13 @@ export default function Analisis() {
       return () => { active = false; };
     }, [])
   );
+
+  const fetchDeuda = useCallback(async (mes: string) => {
+    setLoadingDeuda(true);
+    const { data, error } = await supabase.rpc('fn_deuda_capas', { p_mes: mes });
+    if (!error && data) setDeudaCapas(data as DeudaCapa[]);
+    setLoadingDeuda(false);
+  }, []);
 
   const sym = SYM[currency] ?? currency;
   const fmt = (n: number) => `${sym} ${n.toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -252,10 +275,13 @@ export default function Analisis() {
 
           {/* ── Tabs ── */}
           <View style={s.tabs}>
-            {(['meses', 'categorias', 'precios'] as const).map(t => (
-              <TouchableOpacity key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => setTab(t)}>
+            {(['meses', 'categorias', 'precios', 'deuda'] as const).map(t => (
+              <TouchableOpacity key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => {
+                setTab(t);
+                if (t === 'deuda' && deudaCapas.length === 0) fetchDeuda(mesDeuda);
+              }}>
                 <Text style={[s.tabText, tab === t && s.tabTextOn]}>
-                  {t === 'meses' ? 'Por mes' : t === 'categorias' ? 'Categorías' : 'Precios'}
+                  {t === 'meses' ? 'Meses' : t === 'categorias' ? 'Cats.' : t === 'precios' ? 'Precios' : 'Deuda'}
                 </Text>
                 {t === 'precios' && alertas.length > 0 && (
                   <View style={s.badge}><Text style={s.badgeText}>{alertas.length}</Text></View>
@@ -462,6 +488,133 @@ export default function Analisis() {
               )}
             </>
           )}
+          {/* ── TAB: Deuda (tres capas) ── */}
+          {tab === 'deuda' && (
+            <>
+              {/* Selector de mes */}
+              <View style={s.mesRow}>
+                {[-1, 0].map(offset => {
+                  const d = new Date();
+                  d.setMonth(d.getMonth() + offset);
+                  const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+                  const lbl = MONTHS_ES[d.getMonth()] + ' ' + d.getFullYear();
+                  const active = mesDeuda === val;
+                  return (
+                    <TouchableOpacity
+                      key={val}
+                      style={[s.mesBtn, active && s.mesBtnOn]}
+                      onPress={() => { setMesDeuda(val); fetchDeuda(val); }}
+                    >
+                      <Text style={[s.mesBtnText, active && s.mesBtnTextOn]}>{lbl}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {loadingDeuda ? (
+                <ActivityIndicator color="#7C3AED" style={{ marginTop: 32 }} />
+              ) : deudaCapas.length === 0 ? (
+                <View style={s.card}>
+                  <Text style={{ fontSize: 14, color: '#9CA3AF', textAlign: 'center', padding: 20 }}>
+                    Sin datos de deuda para este mes.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* Leyenda */}
+                  <View style={[s.card, { flexDirection: 'row', gap: 12, paddingVertical: 12 }]}>
+                    {[
+                      { color: '#3B82F6', label: 'Real' },
+                      { color: '#F59E0B', label: 'Presupuestada' },
+                      { color: '#EF4444', label: 'Proyectada' },
+                    ].map(l => (
+                      <View key={l.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: l.color }} />
+                        <Text style={{ fontSize: 11, color: '#6B7280' }}>{l.label}</Text>
+                      </View>
+                    ))}
+                    <Text style={{ fontSize: 10, color: '#9CA3AF', flex: 1, textAlign: 'right' }}>
+                      Montos en PEN
+                    </Text>
+                  </View>
+
+                  {/* Tarjeta por categoría */}
+                  {deudaCapas.map((row, i) => {
+                    const maxVal = Math.max(row.deuda_real, row.deuda_presupuestada, row.deuda_proyectada, 1);
+                    return (
+                      <View key={row.categoria} style={s.card}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                          <Text style={{ fontSize: 18, marginRight: 8 }}>
+                            {ICON_MAP[row.categoria] ?? '📦'}
+                          </Text>
+                          <Text style={s.cardTitle}>{row.categoria}</Text>
+                        </View>
+
+                        {/* Barra Real */}
+                        <View style={s.deudaRow}>
+                          <Text style={s.deudaLabel}>Real</Text>
+                          <View style={s.deudaBarBg}>
+                            <View style={[s.deudaBarFill, {
+                              width: `${Math.round((row.deuda_real / maxVal) * 100)}%` as any,
+                              backgroundColor: '#3B82F6',
+                            }]} />
+                          </View>
+                          <Text style={[s.deudaAmt, { color: '#3B82F6' }]}>{fmt(row.deuda_real)}</Text>
+                        </View>
+
+                        {/* Barra Presupuestada */}
+                        <View style={s.deudaRow}>
+                          <Text style={s.deudaLabel}>Presup.</Text>
+                          <View style={s.deudaBarBg}>
+                            <View style={[s.deudaBarFill, {
+                              width: `${Math.round((row.deuda_presupuestada / maxVal) * 100)}%` as any,
+                              backgroundColor: '#F59E0B',
+                            }]} />
+                          </View>
+                          <Text style={[s.deudaAmt, { color: '#F59E0B' }]}>{fmt(row.deuda_presupuestada)}</Text>
+                        </View>
+
+                        {/* Barra Proyectada */}
+                        <View style={s.deudaRow}>
+                          <Text style={s.deudaLabel}>Proyect.</Text>
+                          <View style={s.deudaBarBg}>
+                            <View style={[s.deudaBarFill, {
+                              width: `${Math.round((row.deuda_proyectada / maxVal) * 100)}%` as any,
+                              backgroundColor: '#EF4444',
+                            }]} />
+                          </View>
+                          <Text style={[s.deudaAmt, { color: '#EF4444' }]}>{fmt(row.deuda_proyectada)}</Text>
+                        </View>
+
+                        {/* Delta proyectado vs real */}
+                        {row.deuda_proyectada > row.deuda_real && (
+                          <Text style={{ fontSize: 11, color: '#EF4444', marginTop: 6 }}>
+                            ▲ {fmt(row.deuda_proyectada - row.deuda_real)} por encima de lo ya registrado al cierre del mes
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+
+                  {/* Totales */}
+                  <View style={[s.card, { backgroundColor: '#F8F9FB' }]}>
+                    <Text style={s.cardTitle}>Totales del mes</Text>
+                    {[
+                      { label: 'Deuda Real',         val: deudaCapas.reduce((s,r)=>s+r.deuda_real,0),          color: '#3B82F6' },
+                      { label: 'Deuda Presupuestada', val: deudaCapas.reduce((s,r)=>s+r.deuda_presupuestada,0), color: '#F59E0B' },
+                      { label: 'Deuda Proyectada',    val: deudaCapas.reduce((s,r)=>s+r.deuda_proyectada,0),    color: '#EF4444' },
+                    ].map(t => (
+                      <View key={t.label} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
+                        <Text style={{ fontSize: 13, color: '#374151' }}>{t.label}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: t.color }}>{fmt(t.val)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+            </>
+          )}
+
         </ScrollView>
       )}
     </View>
@@ -531,4 +684,16 @@ const s = StyleSheet.create({
   summaryNum:  { fontSize: 22, fontWeight: '800', color: '#111827' },
   summaryLabel:{ fontSize: 11, color: '#6B7280', textAlign: 'center', marginTop: 2 },
   summarySep:  { width: 1, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
+
+  // Deuda (tres capas)
+  mesRow:       { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  mesBtn:       { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F3F4F6', alignItems: 'center' },
+  mesBtnOn:     { backgroundColor: '#7C3AED' },
+  mesBtnText:   { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  mesBtnTextOn: { color: '#fff' },
+  deudaRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 8 },
+  deudaLabel:  { fontSize: 11, color: '#6B7280', width: 52 },
+  deudaBarBg:  { flex: 1, height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, overflow: 'hidden' },
+  deudaBarFill:{ height: '100%', borderRadius: 4 },
+  deudaAmt:    { fontSize: 11, fontWeight: '700', width: 64, textAlign: 'right' },
 });

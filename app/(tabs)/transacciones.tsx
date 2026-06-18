@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useCategorias, BASE_INCOME_CATS, iconForCat } from '@/hooks/useCategorias';
 
 interface Tx {
   id: string;
@@ -20,14 +21,6 @@ interface Tx {
 
 const PAGE = 30;
 
-const ICON: Record<string,string> = {
-  Sueldo:'💼', Freelance:'💻', Inversiones:'📈', Negocio:'🏪',
-  Ahorro:'🏦', 'Retiro Ahorro':'💰', 'Pago Tarjeta':'💳', 'Abono Préstamo':'📋',
-  Alimentación:'🛒', Transporte:'🚗', Vivienda:'🏠', Entretenimiento:'🎬',
-  Salud:'💊', Educación:'📚', Ropa:'👕', Servicios:'⚡', Otros:'📦',
-};
-const GASTO_CATS   = ['Alimentación','Transporte','Vivienda','Entretenimiento','Salud','Educación','Ropa','Servicios','Otros'];
-const INGRESO_CATS = ['Sueldo','Freelance','Inversiones','Negocio','Otros'];
 const SYM: Record<string,string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
 
 export default function Transacciones() {
@@ -38,6 +31,8 @@ export default function Transacciones() {
   const [page,         setPage]         = useState(0);
   const [hasMore,      setHasMore]      = useState(true);
   const [loadingMore,  setLoadingMore]  = useState(false);
+
+  const { categorias: catGasto } = useCategorias();
 
   // Edit modal
   const [editing,       setEditing]       = useState<Tx|null>(null);
@@ -127,7 +122,7 @@ export default function Transacciones() {
     fetchTxs(0, next, true);
   };
 
-  const cats = editing?.tipo === 'ingreso' ? INGRESO_CATS : GASTO_CATS;
+  const cats = editing?.tipo === 'ingreso' ? BASE_INCOME_CATS : catGasto;
 
   function GroupHeader({ date }: { date: string }) {
     const d = new Date(date);
@@ -187,7 +182,7 @@ export default function Transacciones() {
             return (
               <View style={[styles.txCard, !tx.activo && styles.txInactive]}>
                 <View style={styles.txIconBox}>
-                  <Text style={{ fontSize: 20 }}>{ICON[tx.categoria] ?? '📦'}</Text>
+                  <Text style={{ fontSize: 20 }}>{iconForCat(tx.categoria, catGasto)}</Text>
                 </View>
                 <View style={styles.txBody}>
                   <Text style={styles.txDesc} numberOfLines={1}>{tx.descripcion || tx.categoria}</Text>
@@ -237,7 +232,7 @@ export default function Transacciones() {
                 onChangeText={setEditMonto} placeholderTextColor="#9CA3AF" />
               <Text style={styles.mLabel}>Categoría</Text>
               <TouchableOpacity style={styles.mInput} onPress={() => setShowCatPicker(true)}>
-                <Text style={{ color:'#111827', fontSize:15 }}>{ICON[editCat] ?? '📦'} {editCat}</Text>
+                <Text style={{ color:'#111827', fontSize:15 }}>{iconForCat(editCat, catGasto)} {editCat}</Text>
               </TouchableOpacity>
               <Text style={styles.mLabel}>Descripción</Text>
               <TextInput style={styles.mInput} value={editDesc} onChangeText={setEditDesc}
@@ -264,10 +259,10 @@ export default function Transacciones() {
               </TouchableOpacity>
             </View>
             {cats.map((cat, i) => (
-              <View key={cat}>
-                <TouchableOpacity style={styles.catOpt} onPress={() => { setEditCat(cat); setShowCatPicker(false); }}>
-                  <Text style={styles.catOptText}>{ICON[cat] ?? '📦'} {cat}</Text>
-                  {editCat === cat && <Text style={{ color:'#3B82F6', fontSize:18 }}>✓</Text>}
+              <View key={cat.nombre}>
+                <TouchableOpacity style={styles.catOpt} onPress={() => { setEditCat(cat.nombre); setShowCatPicker(false); }}>
+                  <Text style={styles.catOptText}>{cat.icono} {cat.nombre}</Text>
+                  {editCat === cat.nombre && <Text style={{ color:'#3B82F6', fontSize:18 }}>✓</Text>}
                 </TouchableOpacity>
                 {i < cats.length - 1 && <View style={styles.sep} />}
               </View>
