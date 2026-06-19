@@ -98,12 +98,12 @@ export default function Analisis() {
         const [profRes, txRes, detRes] = await Promise.all([
           supabase.from('profiles').select('moneda_base').eq('id', user.id).single(),
           supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,creado_en,moneda,tipo_cambio')
+            .select('id,tipo,monto,categoria,fecha,creado_en,moneda,tipo_cambio')
             .eq('user_id', user.id)
             .eq('activo', true)
-            .order('creado_en', { ascending: true }),
+            .order('fecha', { ascending: true }),
           supabase.from('transaccion_detalles')
-            .select('producto,precio_unitario,transacciones!inner(creado_en,user_id)')
+            .select('producto,precio_unitario,transacciones!inner(fecha,creado_en,user_id)')
             .eq('transacciones.user_id', user.id),
         ]);
 
@@ -133,10 +133,10 @@ export default function Analisis() {
         const dets = (detRes.data ?? []) as any[];
         const byProd: Record<string, { mes: string; precio: number }[]> = {};
         dets.forEach(d => {
-          const tx = d.transacciones as any;
-          if (!tx?.creado_en) return;
-          const mes      = tx.creado_en.slice(0, 7);
-          const key      = d.producto.toLowerCase().trim();
+          const tx      = d.transacciones as any;
+          const dateStr = tx?.fecha ?? tx?.creado_en;
+          if (!dateStr) return;
+          const mes      = (dateStr as string).slice(0, 7);
           const nombre   = d.producto;
           if (!byProd[nombre]) byProd[nombre] = [];
           byProd[nombre].push({ mes, precio: Number(d.precio_unitario) });

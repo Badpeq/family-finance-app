@@ -124,17 +124,19 @@ export default function Importar() {
     if (!user) { setError('Sesión expirada.'); setStage('preview'); return; }
 
     const rows = activas.map(l => ({
-      user_id:    user.id,
-      tipo:       'gasto' as const,
-      monto:      l.monto,
-      categoria:  l.categoria,
-      descripcion:l.comercio,
-      moneda:     l.moneda,
-      tipo_cambio:1,
-      activo:     true,
-      fuente:     'importado',
-      fuente_raw: texto.slice(0, 2000),
-      creado_en:  l.fecha + 'T12:00:00',
+      user_id:       user.id,
+      tipo:          'gasto' as const,
+      monto:         l.monto,
+      categoria:     l.categoria,
+      descripcion:   l.comercio,
+      moneda:        l.moneda,
+      tipo_cambio:   1,
+      activo:        true,
+      es_gasto_unico:false,
+      fecha:         l.fecha,
+      fuente:        'importado',
+      fuente_raw:    texto.slice(0, 2000),
+      creado_en:     l.fecha + 'T12:00:00',
     }));
 
     const { error: err } = await supabase.from('transacciones').insert(rows);
@@ -156,17 +158,19 @@ export default function Importar() {
 
     // 1. Insertar transacción consolidada
     const { data: txData, error: txErr } = await supabase.from('transacciones').insert({
-      user_id:    user.id,
-      tipo:       'gasto',
-      monto:      total,
-      categoria:  'Alimentación',
-      descripcion:ticketComercio.trim(),
-      moneda:     currency,
-      tipo_cambio:1,
-      activo:     true,
-      fuente:     'ticket',
-      fuente_raw: texto.slice(0, 2000),
-      creado_en:  ticketFecha + 'T12:00:00',
+      user_id:       user.id,
+      tipo:          'gasto',
+      monto:         total,
+      categoria:     'Alimentación',
+      descripcion:   ticketComercio.trim(),
+      moneda:        currency,
+      tipo_cambio:   1,
+      activo:        true,
+      es_gasto_unico:false,
+      fecha:         ticketFecha,
+      fuente:        'ticket',
+      fuente_raw:    texto.slice(0, 2000),
+      creado_en:     ticketFecha + 'T12:00:00',
     }).select('id').single();
 
     if (txErr || !txData) { setError(txErr?.message ?? 'Error al guardar.'); setStage('items'); return; }
