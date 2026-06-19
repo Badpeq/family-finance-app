@@ -160,9 +160,8 @@ export default function Registrar() {
       const { data } = await supabase
         .from('subcategorias')
         .select('id, nombre')
-        .or(`categoria_nombre.eq.${cat},categoria_id.not.is.null`)
+        .eq('categoria_nombre', cat)
         .order('nombre');
-      // Filtrar solo las que corresponden a esta categoría (por nombre o por FK)
       if (data && data.length > 0) setSubcats(data);
     }
   };
