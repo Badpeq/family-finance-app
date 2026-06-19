@@ -231,8 +231,22 @@ export default function Historial() {
     setDeactivating(false);
   };
 
-  const cats        = editing?.tipo === 'ingreso' ? BASE_INCOME_CATS : catGasto;
-  const subcatName  = subcats.find(s => s.id === editSubcatId)?.nombre ?? null;
+  const handleToggleUnico = async (tx: Tx) => {
+    if (tx.tipo !== 'gasto') return;
+    const newVal = !(tx.es_gasto_unico ?? false);
+    const { error } = await supabase
+      .from('transacciones')
+      .update({ es_gasto_unico: newVal })
+      .eq('id', tx.id);
+    if (!error) {
+      setTxs(prev => prev.map(t =>
+        t.id === tx.id ? { ...t, es_gasto_unico: newVal } : t
+      ));
+    }
+  };
+
+  const cats       = editing?.tipo === 'ingreso' ? BASE_INCOME_CATS : catGasto;
+  const subcatName = subcats.find(s => s.id === editSubcatId)?.nombre ?? null;
 
   const deactivateNote = () => {
     if (!confirmTx) return '';
@@ -311,6 +325,14 @@ export default function Historial() {
               </Text>
               {tx.activo && (
                 <View style={s.txActions}>
+                  {tx.tipo === 'gasto' && (
+                    <TouchableOpacity
+                      onPress={() => handleToggleUnico(tx)}
+                      style={[s.actionBtn, tx.es_gasto_unico ? s.unicoActiveBtn : s.unicoBtn]}
+                    >
+                      <Text style={s.unicoBtnIcon}>⚡</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity onPress={() => openEdit(tx)} style={s.actionBtn}>
                     <Text style={s.editIcon}>✎</Text>
                   </TouchableOpacity>
@@ -344,6 +366,21 @@ export default function Historial() {
                 value={editMonto}
                 onChangeText={setEditMonto}
               />
+
+              {editing?.tipo === 'gasto' && (
+                <View style={s.switchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.switchLabel}>Gasto único ⚡</Text>
+                    <Text style={s.switchSub}>Excluido de la proyección a fin de mes</Text>
+                  </View>
+                  <Switch
+                    value={editUnico}
+                    onValueChange={setEditUnico}
+                    trackColor={{ false: '#E5E7EB', true: '#FEF08A' }}
+                    thumbColor={editUnico ? '#F59E0B' : '#9CA3AF'}
+                  />
+                </View>
+              )}
 
               <Text style={s.label}>Moneda</Text>
               <TouchableOpacity style={s.picker} onPress={() => setShowMonedaPicker(true)}>
@@ -389,21 +426,6 @@ export default function Historial() {
                 placeholder="Opcional"
                 placeholderTextColor="#9CA3AF"
               />
-
-              {editing?.tipo === 'gasto' && (
-                <View style={s.switchRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.switchLabel}>Gasto único</Text>
-                    <Text style={s.switchSub}>No se prorratea en la proyección mensual</Text>
-                  </View>
-                  <Switch
-                    value={editUnico}
-                    onValueChange={setEditUnico}
-                    trackColor={{ false: '#E5E7EB', true: '#C4B5FD' }}
-                    thumbColor={editUnico ? '#7C3AED' : '#9CA3AF'}
-                  />
-                </View>
-              )}
 
               {editing?.metodo_pago === 'tarjeta' && (
                 <Text style={s.note}>
@@ -591,6 +613,9 @@ const s = StyleSheet.create({
 
   unicoBadge:     { backgroundColor: '#FEF9C3', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
   unicoBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
+  unicoBtn:       { backgroundColor: '#F3F4F6' },
+  unicoActiveBtn: { backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FCD34D' },
+  unicoBtnIcon:   { fontSize: 12 },
 
   sep:      { height: 6 },
   green:    { color: '#059669' },
