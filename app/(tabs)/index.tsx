@@ -13,8 +13,9 @@ import { toPEN } from '@/services/exchangeRate';
 import { useCategorias, iconForCat } from '@/hooks/useCategorias';
 
 interface Profile     { nombre: string; moneda_base: string; modulo_ahorros: boolean; modulo_prestamos: boolean; modulo_tarjetas: boolean; presupuesto_template: Record<string,number> | null }
-interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; moneda?: string; tipo_cambio?: number }
+interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; fecha?: string; moneda?: string; tipo_cambio?: number; es_gasto_unico?: boolean }
 interface Presupuesto { categoria: string; monto_limite: number; seguimiento_diario: boolean }
+interface DeudaCapa   { categoria: string; deuda_real: number; deuda_presupuestada: number; deuda_proyectada: number }
 
 const SYM: Record<string,string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
 const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [gastosPorCat, setGastosPorCat] = useState<Record<string,number>>({});
   const [gastosHoy,    setGastosHoy]    = useState<Record<string,number>>({});
+  const [deudaCapas,   setDeudaCapas]   = useState<DeudaCapa[]>([]);
   const [loading,      setLoading]      = useState(true);
 
   const { categorias: catGasto } = useCategorias();
@@ -79,21 +81,23 @@ export default function Dashboard() {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const periodoDate  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
-        const [pRes, txRes, budRes] = await Promise.all([
+        const [pRes, txRes, budRes, dcRes] = await Promise.all([
           supabase.from('profiles').select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template').eq('id', user.id).single(),
           supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio')
+            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,fecha,moneda,tipo_cambio,es_gasto_unico')
             .eq('user_id', user.id).eq('activo', true)
-            .gte('creado_en', startOfMonth)
-            .order('creado_en', { ascending: false }).limit(200),
+            .gte('fecha', periodoDate)
+            .order('fecha', { ascending: false }).limit(200),
           supabase.from('presupuestos')
             .select('categoria,monto_limite,seguimiento_diario')
             .eq('user_id', user.id).eq('periodo', periodoDate),
+          supabase.rpc('fn_deuda_capas', { p_mes: periodoDate }),
         ]);
 
         if (!active) return;
         if (pRes.data)   setProfile(pRes.data as Profile);
         if (txRes.data)  setTxs(txRes.data as Transaccion[]);
+        if (dcRes.data)  setDeudaCapas(dcRes.data as DeudaCapa[]);
 
         // Auto-replicar presupuestos: si no hay ninguno este mes pero el perfil
         // tiene un template guardado, crear los presupuestos automáticamente.
@@ -125,7 +129,7 @@ export default function Dashboard() {
           const tc  = (t as any).tipo_cambio ?? 1;
           const pen = mon === 'USD' ? m * tc : m;
           gpc[t.categoria] = (gpc[t.categoria] ?? 0) + pen;
-          if (t.creado_en.slice(0, 10) === todayStr) {
+          if ((t.fecha ?? t.creado_en.slice(0, 10)) === todayStr) {
             ghoy[t.categoria] = (ghoy[t.categoria] ?? 0) + pen;
           }
         });
@@ -164,8 +168,22 @@ export default function Dashboard() {
     d.setDate(d.getDate() - (6 - i));
     return d.toISOString().slice(0, 10);
   });
-  const sparkIn  = last7.map(day => txs.filter(t => t.tipo === 'ingreso' && t.creado_en.slice(0,10) === day).reduce((s,t) => s + toPENAmount(t), 0));
-  const sparkOut = last7.map(day => txs.filter(t => t.tipo === 'gasto'   && t.creado_en.slice(0,10) === day).reduce((s,t) => s + toPENAmount(t), 0));
+  const sparkIn  = last7.map(day => txs.filter(t => t.tipo === 'ingreso' && (t.fecha ?? t.creado_en.slice(0,10)) === day).reduce((s,t) => s + toPENAmount(t), 0));
+  const sparkOut = last7.map(day => txs.filter(t => t.tipo === 'gasto'   && (t.fecha ?? t.creado_en.slice(0,10)) === day).reduce((s,t) => s + toPENAmount(t), 0));
+
+  // ── Termómetro 3 capas (via fn_deuda_capas) ──────────────────────────────
+  const limiteTotal        = presupuestos.reduce((s, p) => s + p.monto_limite, 0);
+  const totalReal          = deudaCapas.reduce((s, c) => s + Number(c.deuda_real), 0);
+  const totalPresupuestado = deudaCapas.reduce((s, c) => s + Number(c.deuda_presupuestada), 0);
+  const totalProyectado    = deudaCapas.reduce((s, c) => s + Number(c.deuda_proyectada), 0);
+  const pctProyectado      = limiteTotal > 0 ? totalProyectado / limiteTotal : 0;
+  const semaforoColor      = budgetColor(pctProyectado);
+  const semaforoLabel      = pctProyectado >= 0.9 ? '🔴 Cuidado' : pctProyectado >= 0.7 ? '🟡 Ajustado' : '🟢 Vas bien';
+  const semaforoMsg        = pctProyectado >= 0.9
+    ? `Proyectarás ${fmt(totalProyectado, currency)} — ${fmt(totalProyectado - limiteTotal, currency)} sobre el límite.`
+    : pctProyectado >= 0.7
+    ? `Proyectarás ${fmt(totalProyectado, currency)} — cerca del tope. Cuida los gastos estos días.`
+    : `Proyectarás ${fmt(totalProyectado, currency)} — ahorrarías ${fmt(limiteTotal - totalProyectado, currency)} 💪`;
 
   const periodoDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
 
@@ -255,6 +273,36 @@ export default function Dashboard() {
               </View>
             </View>
           </View>
+
+          {/* ── Termómetro 3 capas ── */}
+          {!loading && deudaCapas.length > 0 && limiteTotal > 0 && (
+            <View style={styles.termo}>
+              <View style={styles.termoHead}>
+                <Text style={styles.termoTitle}>🌡 Termómetro del mes</Text>
+                <Text style={[styles.termoBadge, { color: semaforoColor }]}>{semaforoLabel}</Text>
+              </View>
+              {([
+                { label: 'Gastado real',       total: totalReal,          pct: limiteTotal > 0 ? totalReal / limiteTotal          : 0, color: '#6B7280' },
+                { label: 'Con compromisos',    total: totalPresupuestado, pct: limiteTotal > 0 ? totalPresupuestado / limiteTotal : 0, color: '#F59E0B' },
+                { label: 'Proyección fin mes', total: totalProyectado,    pct: pctProyectado,                                         color: semaforoColor },
+              ] as const).map(row => (
+                <View key={row.label} style={styles.termoRow}>
+                  <View style={styles.termoRowHead}>
+                    <Text style={styles.termoLabel}>{row.label}</Text>
+                    <Text style={[styles.termoAmt, { color: row.color }]}>{fmt(row.total, currency)}</Text>
+                  </View>
+                  <View style={styles.termoBarBg}>
+                    <View style={[styles.termoBarFill, {
+                      width: `${Math.min(Math.round(row.pct * 100), 100)}%` as any,
+                      backgroundColor: row.color,
+                    }]} />
+                  </View>
+                  <Text style={styles.termoPct}>{Math.round(row.pct * 100)}% del presupuesto</Text>
+                </View>
+              ))}
+              <Text style={[styles.termoMsg, { color: semaforoColor }]}>{semaforoMsg}</Text>
+            </View>
+          )}
 
           {/* ── Acciones rápidas (scroll horizontal) ── */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
@@ -385,7 +433,7 @@ export default function Dashboard() {
                       <View style={styles.txBody}>
                         <Text style={styles.txDesc} numberOfLines={1}>{tx.descripcion || tx.categoria}</Text>
                         <Text style={styles.txMeta}>
-                          {tx.categoria} · {new Date(tx.creado_en).toLocaleDateString('es-PE',{day:'2-digit',month:'short'})}
+                          {tx.categoria} · {new Date(tx.fecha ?? tx.creado_en).toLocaleDateString('es-PE',{day:'2-digit',month:'short'})}
                         </Text>
                       </View>
                       <Text style={[styles.txAmt, tx.tipo === 'ingreso' ? styles.green : styles.red]}>
@@ -659,4 +707,19 @@ const styles = StyleSheet.create({
   catOpt:       { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
                   paddingHorizontal:20, paddingVertical:14 },
   catOptText:   { fontSize:15, color:'#111827' },
+
+  // ── Termómetro ──────────────────────────────────────────────
+  termo:        { backgroundColor:'#fff', borderRadius:16, padding:16, marginBottom:16,
+                  shadowColor:'#000', shadowOpacity:0.05, shadowRadius:8, elevation:2 },
+  termoHead:    { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:14 },
+  termoTitle:   { fontSize:14, fontWeight:'700', color:'#111827' },
+  termoBadge:   { fontSize:12, fontWeight:'700' },
+  termoRow:     { marginBottom:10 },
+  termoRowHead: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:4 },
+  termoLabel:   { fontSize:12, color:'#6B7280', fontWeight:'500' },
+  termoAmt:     { fontSize:13, fontWeight:'700' },
+  termoBarBg:   { height:6, backgroundColor:'#F3F4F6', borderRadius:3, overflow:'hidden', marginBottom:2 },
+  termoBarFill: { height:'100%' as any, borderRadius:3 },
+  termoPct:     { fontSize:10, color:'#9CA3AF' },
+  termoMsg:     { fontSize:12, fontWeight:'500', marginTop:6, lineHeight:17 },
 });
