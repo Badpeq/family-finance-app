@@ -64,6 +64,7 @@ export default function Historial() {
   const [showMonedaPicker, setShowMonedaPicker] = useState(false);
   const [showSubcatPicker, setShowSubcatPicker] = useState(false);
   const [saving,           setSaving]           = useState(false);
+  const [saveError,        setSaveError]        = useState('');
 
   // Deactivate confirm
   const [confirmTx,    setConfirmTx]    = useState<Tx | null>(null);
@@ -137,6 +138,7 @@ export default function Historial() {
   };
 
   const openEdit = (tx: Tx) => {
+    setSaveError('');
     setEditing(tx);
     setEditMonto(String(tx.monto));
     setEditCat(tx.categoria);
@@ -153,8 +155,20 @@ export default function Historial() {
 
   const handleSave = async () => {
     if (!editing) return;
+    setSaveError('');
+
     const m = parseFloat(editMonto.replace(',', '.'));
-    if (isNaN(m) || m <= 0) return;
+    if (isNaN(m) || m <= 0) {
+      setSaveError('El monto debe ser un número mayor a 0.');
+      return;
+    }
+
+    const fechaParsed = parseFechaEdit(editFecha);
+    if (!fechaParsed) {
+      setSaveError('Fecha inválida. Usa el formato DD/MM/AAAA (ej: 15/06/2025).');
+      return;
+    }
+
     setSaving(true);
 
     if (
@@ -174,24 +188,30 @@ export default function Historial() {
       }
     }
 
-    const fechaParsed = parseFechaEdit(editFecha);
     const updates: Record<string, unknown> = {
       monto:       m,
       categoria:   editCat,
       descripcion: editDesc.trim() || null,
       moneda:      editMoneda,
-      ...(fechaParsed ? { fecha: fechaParsed } : {}),
+      fecha:       fechaParsed,
       ...(editing.tipo === 'gasto' ? {
         es_gasto_unico:  editUnico,
         subcategoria_id: editSubcatId ?? null,
       } : {}),
     };
 
-    await supabase.from('transacciones').update(updates).eq('id', editing.id);
+    const { error } = await supabase.from('transacciones').update(updates).eq('id', editing.id);
 
+    if (error) {
+      setSaveError(`Error al guardar: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const savedId = editing.id;
     setTxs(prev => prev.map(t =>
-      t.id === editing!.id
-        ? { ...t, ...updates, fecha: fechaParsed ?? t.fecha } as Tx
+      t.id === savedId
+        ? { ...t, ...updates } as Tx
         : t
     ));
     setEditing(null);
@@ -389,6 +409,12 @@ export default function Historial() {
                 <Text style={s.note}>
                   El ajuste de monto actualizará la deuda de la tarjeta automáticamente.
                 </Text>
+              )}
+
+              {!!saveError && (
+                <View style={s.errBox}>
+                  <Text style={s.errText}>{saveError}</Text>
+                </View>
               )}
 
               <View style={s.rowBtns}>
@@ -600,6 +626,8 @@ const s = StyleSheet.create({
 
   note:        { fontSize: 12, color: '#0891B2', marginBottom: 16, lineHeight: 18 },
   confirmText: { fontSize: 14, color: '#6B7280', lineHeight: 20, marginBottom: 24 },
+  errBox:      { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 12 },
+  errText:     { color: '#DC2626', fontSize: 13, lineHeight: 18 },
 
   rowBtns:     { flexDirection: 'row', gap: 10, marginTop: 4 },
   cancelBtn:   { flex: 1, height: 48, backgroundColor: '#F3F4F6', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
