@@ -1,11 +1,19 @@
 import { Tabs } from 'expo-router';
-import { Platform, Text } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 
 function Icon({ glyph, focused }: { glyph: string; focused: boolean }) {
   return (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.45, lineHeight: 24 }}>
-      {glyph}
-    </Text>
+    <View style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{
+        fontSize: 20,
+        opacity: focused ? 1 : 0.4,
+        includeFontPadding: false,
+        textAlignVertical: 'center',
+        lineHeight: Platform.OS === 'android' ? 24 : undefined,
+      }}>
+        {glyph}
+      </Text>
+    </View>
   );
 }
 

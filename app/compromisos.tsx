@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, SafeAreaView, Platform,
+  ActivityIndicator, SafeAreaView, Platform, Modal, TextInput,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -38,10 +38,23 @@ const CAT_ICONS: Record<string, string> = {
 const iconFor = (cat: string) => CAT_ICONS[cat] ?? '📦';
 
 export default function Compromisos() {
-  const [items,    setItems]    = useState<CompromisoProgramado[]>([]);
-  const [cuotas,   setCuotas]   = useState<Cuota[]>([]);
-  const [currency, setCurrency] = useState('PEN');
-  const [loading,  setLoading]  = useState(true);
+  const [items,          setItems]          = useState<CompromisoProgramado[]>([]);
+  const [cuotas,         setCuotas]         = useState<Cuota[]>([]);
+  const [currency,       setCurrency]       = useState('PEN');
+  const [loading,        setLoading]        = useState(true);
+
+  // Action sheet
+  const [actionItem,     setActionItem]     = useState<CompromisoProgramado | null>(null);
+
+  // Edit día de cobro
+  const [editItem,       setEditItem]       = useState<CompromisoProgramado | null>(null);
+  const [editDia,        setEditDia]        = useState('');
+  const [editError,      setEditError]      = useState('');
+  const [saving,         setSaving]         = useState(false);
+
+  // Confirmar anulación
+  const [confirmAnular,  setConfirmAnular]  = useState<CompromisoProgramado | null>(null);
+  const [anulando,       setAnulando]       = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -53,8 +66,13 @@ export default function Compromisos() {
 
         const [profRes, viewRes, cuotasRes] = await Promise.all([
           supabase.from('profiles').select('moneda_base').eq('id', user.id).single(),
-          supabase.from('v_gastos_programados_mes').select('id,tipo_programado,descripcion,categoria,monto_cuota,dia_cobro,aplicado').order('aplicado').order('dia_cobro'),
-          supabase.from('compras_cuotas').select('id,total_cuotas,mes_inicio,descripcion').eq('user_id', user.id),
+          supabase.from('v_gastos_programados_mes')
+            .select('id,tipo_programado,descripcion,categoria,monto_cuota,dia_cobro,aplicado')
+            .order('aplicado')
+            .order('dia_cobro'),
+          supabase.from('compras_cuotas')
+            .select('id,total_cuotas,mes_inicio,descripcion')
+            .eq('user_id', user.id),
         ]);
 
         if (!active) return;
@@ -68,16 +86,60 @@ export default function Compromisos() {
   );
 
   const sym = SYM[currency] ?? currency;
-
-  const pendientes = items.filter(i => !i.aplicado);
-  const aplicados  = items.filter(i => i.aplicado);
+  const pendientes    = items.filter(i => !i.aplicado);
+  const aplicados     = items.filter(i =>  i.aplicado);
   const totalPendiente = pendientes.reduce((s, i) => s + Number(i.monto_cuota), 0);
-  const totalAplicado  = aplicados.reduce((s, i) => s + Number(i.monto_cuota), 0);
+  const totalAplicado  = aplicados.reduce((s, i)  => s + Number(i.monto_cuota), 0);
 
   const cuotaInfo = (id: string) => cuotas.find(c => c.id === id);
 
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+
+  const openEdit = (item: CompromisoProgramado) => {
+    setEditError('');
+    setEditItem(item);
+    setEditDia(String(item.dia_cobro));
+    setActionItem(null);
+  };
+
+  const handleEditSave = async () => {
+    if (!editItem) return;
+    const dia = parseInt(editDia.trim(), 10);
+    if (isNaN(dia) || dia < 1 || dia > 31) {
+      setEditError('Ingresa un día válido entre 1 y 31.');
+      return;
+    }
+    setSaving(true);
+    const table = editItem.tipo_programado === 'recurrente' ? 'gastos_recurrentes' : 'compras_cuotas';
+    const { error } = await supabase.from(table).update({ dia_cobro: dia }).eq('id', editItem.id);
+    if (error) { setEditError(error.message); setSaving(false); return; }
+    setItems(prev => prev.map(i => i.id === editItem!.id ? { ...i, dia_cobro: dia } : i));
+    setEditItem(null);
+    setSaving(false);
+  };
+
+  const handleAnular = async () => {
+    if (!confirmAnular) return;
+    setAnulando(true);
+    const now = new Date();
+    // Set mes_fin to current month → recurrente ends after this month
+    const mesFin = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+    if (confirmAnular.tipo_programado === 'recurrente') {
+      await supabase.from('gastos_recurrentes').update({ mes_fin: mesFin }).eq('id', confirmAnular.id);
+    } else {
+      // For cuotas: delete the record
+      await supabase.from('compras_cuotas').delete().eq('id', confirmAnular.id);
+    }
+    setItems(prev => prev.filter(i => i.id !== confirmAnular!.id));
+    setConfirmAnular(null);
+    setAnulando(false);
+  };
+
+  // ── Render item ───────────────────────────────────────────────────────────────
+
   const renderItem = (item: CompromisoProgramado) => {
-    const cuota = item.tipo_programado === 'cuota' ? cuotaInfo(item.id) : null;
+    const cuota    = item.tipo_programado === 'cuota' ? cuotaInfo(item.id) : null;
     const cuotaNum = cuota ? cuotaActual(cuota.mes_inicio) : null;
     return (
       <View key={item.id} style={s.card}>
@@ -107,12 +169,23 @@ export default function Compromisos() {
             </View>
           )}
         </View>
-        <Text style={[s.cardAmt, item.aplicado ? s.amtApplied : s.amtPending]}>
-          {sym} {Number(item.monto_cuota).toFixed(2)}
-        </Text>
+        <View style={s.cardRight}>
+          <Text style={[s.cardAmt, item.aplicado ? s.amtApplied : s.amtPending]}>
+            {sym} {Number(item.monto_cuota).toFixed(2)}
+          </Text>
+          <TouchableOpacity
+            style={s.menuBtn}
+            onPress={() => setActionItem(item)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={s.menuBtnText}>···</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={s.safe}>
@@ -149,7 +222,7 @@ export default function Compromisos() {
               <Text style={s.emptyIcon}>🔄</Text>
               <Text style={s.emptyTitle}>Sin compromisos fijos este mes</Text>
               <Text style={s.emptySub}>
-                Registra gastos recurrentes o cuotas desde la pantalla de Registrar o al importar un voucher.
+                Registra gastos recurrentes o cuotas desde Gestionar Deudas.
               </Text>
             </View>
           )}
@@ -171,9 +244,138 @@ export default function Compromisos() {
           <View style={{ height: 48 }} />
         </ScrollView>
       )}
+
+      {/* ── Action sheet ── */}
+      <Modal visible={!!actionItem} animationType="slide" transparent>
+        <TouchableOpacity
+          style={s.overlay}
+          activeOpacity={1}
+          onPress={() => setActionItem(null)}
+        >
+          <View style={s.sheet}>
+            <View style={s.sheetPill} />
+            <Text style={s.sheetTitle} numberOfLines={1}>
+              {actionItem?.descripcion ?? actionItem?.categoria ?? ''}
+            </Text>
+            <View style={s.sheetSep} />
+
+            <TouchableOpacity style={s.sheetOpt} onPress={() => openEdit(actionItem!)}>
+              <View style={[s.optIcon, { backgroundColor: '#EFF6FF' }]}>
+                <Text style={{ fontSize: 18 }}>📅</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.optTitle}>Cambiar día de cobro</Text>
+                <Text style={s.optSub}>Actualmente: día {actionItem?.dia_cobro} de cada mes</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={s.sheetSep} />
+            <TouchableOpacity
+              style={s.sheetOpt}
+              onPress={() => { setConfirmAnular(actionItem!); setActionItem(null); }}
+            >
+              <View style={[s.optIcon, { backgroundColor: '#FEF2F2' }]}>
+                <Text style={{ fontSize: 18 }}>🚫</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.optTitle, { color: '#DC2626' }]}>
+                  {actionItem?.tipo_programado === 'recurrente' ? 'Anular recurrente' : 'Eliminar cuota'}
+                </Text>
+                <Text style={s.optSub}>
+                  {actionItem?.tipo_programado === 'recurrente'
+                    ? 'No aparecerá a partir del mes siguiente'
+                    : 'Se eliminarán todas las cuotas pendientes'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.sheetCancel} onPress={() => setActionItem(null)}>
+              <Text style={s.sheetCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── Edit día de cobro ── */}
+      <Modal visible={!!editItem} animationType="slide" transparent>
+        <View style={s.overlay}>
+          <View style={s.editSheet}>
+            <View style={s.sheetHead}>
+              <Text style={s.sheetTitle}>Cambiar día de cobro</Text>
+              <TouchableOpacity onPress={() => setEditItem(null)}>
+                <Text style={s.closeBtn}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={s.editSub}>
+              {editItem?.descripcion ?? editItem?.categoria}
+            </Text>
+            <Text style={s.editLabel}>Día del mes (1 – 31)</Text>
+            <TextInput
+              style={s.editInput}
+              value={editDia}
+              onChangeText={t => setEditDia(t.replace(/\D/g, '').slice(0, 2))}
+              keyboardType="number-pad"
+              maxLength={2}
+              placeholder="Ej: 15"
+              placeholderTextColor="#9CA3AF"
+            />
+            {!!editError && (
+              <Text style={s.editError}>{editError}</Text>
+            )}
+            <View style={s.editBtns}>
+              <TouchableOpacity style={s.editCancel} onPress={() => setEditItem(null)}>
+                <Text style={s.editCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.editSave, saving && { opacity: 0.6 }]}
+                onPress={handleEditSave}
+                disabled={saving}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.editSaveText}>Guardar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Confirm anular ── */}
+      <Modal visible={!!confirmAnular} animationType="fade" transparent>
+        <View style={s.confirmBg}>
+          <View style={s.confirmBox}>
+            <Text style={s.confirmTitle}>
+              {confirmAnular?.tipo_programado === 'recurrente' ? '¿Anular recurrente?' : '¿Eliminar cuota?'}
+            </Text>
+            <Text style={s.confirmSub}>
+              {confirmAnular?.tipo_programado === 'recurrente'
+                ? `"${confirmAnular?.descripcion ?? confirmAnular?.categoria}" no aparecerá a partir del mes siguiente. El historial de pagos se conserva.`
+                : `Se eliminarán todas las cuotas pendientes de "${confirmAnular?.descripcion}". Esta acción no se puede deshacer.`}
+            </Text>
+            <View style={s.confirmBtns}>
+              <TouchableOpacity style={s.confirmCancel} onPress={() => setConfirmAnular(null)}>
+                <Text style={s.confirmCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.confirmDanger, anulando && { opacity: 0.6 }]}
+                onPress={handleAnular}
+                disabled={anulando}
+              >
+                {anulando
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.confirmDangerText}>
+                      {confirmAnular?.tipo_programado === 'recurrente' ? 'Anular' : 'Eliminar'}
+                    </Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: '#F9FAFB' },
@@ -205,7 +407,10 @@ const s = StyleSheet.create({
   cardTitleRow:{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' },
   cardName:  { fontSize: 14, fontWeight: '600', color: '#111827', flexShrink: 1 },
   cardMeta:  { fontSize: 11, color: '#9CA3AF', marginBottom: 4 },
-  cardAmt:   { fontSize: 15, fontWeight: '700', marginLeft: 10, flexShrink: 0 },
+  cardRight: { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
+  cardAmt:   { fontSize: 15, fontWeight: '700', marginBottom: 6 },
+  menuBtn:   { backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  menuBtnText:{ fontSize: 14, color: '#374151', fontWeight: '700', letterSpacing: 2 },
   amtPending:{ color: '#DC2626' },
   amtApplied:{ color: '#059669' },
 
@@ -223,4 +428,42 @@ const s = StyleSheet.create({
   emptyIcon:  { fontSize: 48, marginBottom: 14 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#374151', marginBottom: 8, textAlign: 'center' },
   emptySub:   { fontSize: 13, color: '#9CA3AF', textAlign: 'center', lineHeight: 20 },
+
+  // Action sheet
+  overlay:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet:         { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: Platform.OS === 'ios' ? 36 : 16 },
+  sheetPill:     { width: 36, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
+  sheetTitle:    { fontSize: 13, fontWeight: '600', color: '#6B7280', paddingHorizontal: 20, paddingVertical: 10 },
+  sheetSep:      { height: 1, backgroundColor: '#F3F4F6' },
+  sheetOpt:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
+  optIcon:       { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  optTitle:      { fontSize: 15, fontWeight: '500', color: '#111827' },
+  optSub:        { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
+  sheetCancel:   { margin: 14, marginTop: 8, backgroundColor: '#F3F4F6', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  sheetCancelText: { fontSize: 15, fontWeight: '600', color: '#374151' },
+
+  // Edit modal
+  editSheet:     { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, width: '100%' },
+  sheetHead:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  closeBtn:      { fontSize: 18, color: '#9CA3AF', padding: 4 },
+  editSub:       { fontSize: 13, color: '#6B7280', marginBottom: 20 },
+  editLabel:     { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8 },
+  editInput:     { height: 52, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8, textAlign: 'center' },
+  editError:     { fontSize: 13, color: '#DC2626', marginBottom: 12 },
+  editBtns:      { flexDirection: 'row', gap: 10, marginTop: 8 },
+  editCancel:    { flex: 1, height: 48, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  editCancelText:{ fontSize: 15, color: '#374151', fontWeight: '500' },
+  editSave:      { flex: 1, height: 48, backgroundColor: '#3B82F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  editSaveText:  { fontSize: 15, color: '#fff', fontWeight: '600' },
+
+  // Confirm dialog
+  confirmBg:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  confirmBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
+  confirmTitle:      { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
+  confirmSub:        { fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 20 },
+  confirmBtns:       { flexDirection: 'row', gap: 10 },
+  confirmCancel:     { flex: 1, height: 46, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmCancelText: { fontSize: 14, color: '#374151', fontWeight: '500' },
+  confirmDanger:     { flex: 1, height: 46, backgroundColor: '#DC2626', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmDangerText: { fontSize: 14, color: '#fff', fontWeight: '600' },
 });

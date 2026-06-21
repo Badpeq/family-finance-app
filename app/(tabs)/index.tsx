@@ -18,6 +18,7 @@ interface Transaccion {
   id: string; tipo: 'ingreso' | 'gasto'; monto: number; categoria: string;
   descripcion: string | null; metodo_pago: string | null; creado_en: string;
   moneda?: string; tipo_cambio?: number; es_gasto_unico?: boolean | null;
+  gastos_recurrentes_id?: string | null;
 }
 interface Presupuesto { categoria: string; monto_limite: number }
 
@@ -64,9 +65,10 @@ export default function Dashboard() {
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [gastosPorCat, setGastosPorCat] = useState<Record<string, number>>({});
   const [loading,      setLoading]      = useState(true);
-  const [showAllCats,       setShowAllCats]       = useState(false);
-  const [showQuickAdd,      setShowQuickAdd]      = useState(false);
-  const [showProyectadoInfo,setShowProyectadoInfo]= useState(false);
+  const [showAllCats,        setShowAllCats]        = useState(false);
+  const [showQuickAdd,       setShowQuickAdd]       = useState(false);
+  const [showProyectadoInfo, setShowProyectadoInfo] = useState(false);
+  const [pendingCommits,     setPendingCommits]     = useState<{ id: string; monto: number; descripcion: string | null }[]>([]);
 
   const { rate } = useExchangeRate();
 
@@ -81,18 +83,23 @@ export default function Dashboard() {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const periodoDate  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
-        const [pRes, txRes, budRes] = await Promise.all([
+        const [pRes, txRes, budRes, recRes] = await Promise.all([
           supabase.from('profiles')
             .select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template')
             .eq('id', user.id).single(),
           supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio,es_gasto_unico')
+            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio,es_gasto_unico,gastos_recurrentes_id')
             .eq('user_id', user.id).eq('activo', true)
             .gte('creado_en', startOfMonth)
             .order('creado_en', { ascending: false }).limit(200),
           supabase.from('presupuestos')
             .select('categoria,monto_limite')
             .eq('user_id', user.id).eq('periodo', periodoDate),
+          supabase.from('gastos_recurrentes')
+            .select('id,monto,descripcion')
+            .eq('user_id', user.id)
+            .lte('mes_inicio', periodoDate)
+            .or(`mes_fin.is.null,mes_fin.gte.${periodoDate}`),
         ]);
 
         if (!active) return;
@@ -115,6 +122,20 @@ export default function Dashboard() {
           }
         } else {
           setPresupuestos(budData as Presupuesto[]);
+        }
+
+        // Compromisos pendientes = recurrentes activos sin transacción este mes
+        if (active && recRes.data && txRes.data) {
+          const appliedIds = new Set(
+            (txRes.data as any[])
+              .filter(t => t.gastos_recurrentes_id)
+              .map(t => t.gastos_recurrentes_id as string)
+          );
+          setPendingCommits(
+            (recRes.data as any[])
+              .filter(r => !appliedIds.has(r.id))
+              .map(r => ({ id: r.id, monto: Number(r.monto), descripcion: r.descripcion }))
+          );
         }
 
         const gpc: Record<string, number> = {};
@@ -156,8 +177,9 @@ export default function Dashboard() {
   const daysElapsed  = now.getDate();
   const totalPres    = presupuestos.reduce((s, p) => s + p.monto_limite, 0);
   // Run-rate: project regular expenses only; únicos are already paid, not repeated
-  const runRate      = daysElapsed > 0 ? (expensesRec / daysElapsed) * daysInMonth : 0;
-  const proyectado   = runRate + expensesUnicos;
+  const runRate            = daysElapsed > 0 ? (expensesRec / daysElapsed) * daysInMonth : 0;
+  const totalPendingCommits = pendingCommits.reduce((s, r) => s + r.monto, 0);
+  const proyectado          = runRate + expensesUnicos + totalPendingCommits;
   const presProgress = totalPres > 0 ? Math.min(expenses / totalPres, 1) : 0;
   const proyColor    = totalPres > 0 && proyectado > totalPres      ? C.red
                      : totalPres > 0 && proyectado > totalPres * 0.85 ? C.amber
@@ -283,7 +305,7 @@ export default function Dashboard() {
 
           {/* ── Proyectado: full-width featured card con desglose ── */}
           <TouchableOpacity
-            style={[s.bentoCard, s.proyCard]}
+            style={s.proyStandalone}
             onPress={() => setShowProyectadoInfo(v => !v)}
             activeOpacity={0.85}
           >
@@ -320,6 +342,12 @@ export default function Dashboard() {
                   <View style={s.proyDetailRow}>
                     <Text style={s.proyDetailLabel}>+ Gastos únicos ⚡</Text>
                     <Text style={s.proyDetailVal}>{fmt(expensesUnicos, currency)}</Text>
+                  </View>
+                )}
+                {totalPendingCommits > 0 && (
+                  <View style={s.proyDetailRow}>
+                    <Text style={s.proyDetailLabel}>+ Compromisos pendientes 🔄</Text>
+                    <Text style={s.proyDetailVal}>{fmt(totalPendingCommits, currency)}</Text>
                   </View>
                 )}
                 <View style={s.proyDetailSep} />
@@ -472,7 +500,7 @@ export default function Dashboard() {
             )}
           </View>
 
-          <View style={{ height: 110 }} />
+          <View style={{ height: 160 }} />
         </View>
       </ScrollView>
 
@@ -606,8 +634,12 @@ const s = StyleSheet.create({
   },
   bentoSub: { fontSize: 10, color: C.textMicro },
 
-  // ── Proyectado card
-  proyCard:       { flex: 0, marginBottom: 10 },
+  // ── Proyectado card (standalone — sin heredar flex:1 de bentoCard)
+  proyStandalone: {
+    backgroundColor: C.card, borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: C.border,
+    marginBottom: 10,
+  },
   proyHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   proyToggle:     { fontSize: 11, color: C.accent, fontWeight: '500' },
   proyAmt:        { fontSize: 26, fontWeight: '800', letterSpacing: -0.6 },
