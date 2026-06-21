@@ -1,16 +1,56 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, ActivityIndicator,
-  Platform, SafeAreaView, TouchableOpacity,
+  Platform, SafeAreaView, TouchableOpacity, Animated, StatusBar,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
+import SparklineChart from '@/components/SparklineChart';
 
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const C = {
+  screen:      '#F7F8FA',
+  hero:        '#080C10',
+  card:        '#FFFFFF',
+  border:      'rgba(0,0,0,0.06)',
+  textPrimary: '#0D1117',
+  textSec:     '#6B7280',
+  textMicro:   '#9CA3AF',
+  textHero:    '#FFFFFF',
+  textMuted:   'rgba(255,255,255,0.50)',
+  textLabel:   'rgba(255,255,255,0.30)',
+  accent:      '#3B82F6',
+  green:       '#00D084',
+  amber:       '#F59E0B',
+  red:         '#FF3B30',
+};
+
+const SYM: Record<string, string> = {
+  PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$', COP: '$', MXN: '$', ARS: '$', CLP: '$',
+};
+
+const CAT_ICONS: Record<string, string> = {
+  Alimentación: '🛒', Transporte: '🚗', Vivienda: '🏠', Entretenimiento: '🎬',
+  Salud: '💊', Educación: '📚', Ropa: '👕', Servicios: '⚡', Restaurantes: '🍽️',
+  Otros: '📦', Sueldo: '💼', Bono: '🎁', Freelance: '💻', Inversiones: '📈', Negocio: '🏪',
+};
+
+const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface MonthSummary {
   mes:      string;
   ingresos: number;
   gastos:   number;
   porCat:   Record<string, number>;
+}
+
+interface Subcat {
+  id:     string | null;
+  nombre: string;
+  total:  number;
 }
 
 interface ProductoPrecio {
@@ -22,57 +62,53 @@ interface ProductoPrecio {
   alerta:    boolean;
 }
 
-const SYM: Record<string, string> = {
-  PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$', COP: '$', MXN: '$', ARS: '$', CLP: '$',
-};
-const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtMes(ym: string) {
+  const [y, m] = ym.split('-');
+  return `${MONTHS_ES[parseInt(m, 10) - 1]} ${y.slice(2)}`;
+}
 
-function pct(a: number, b: number) {
+function pctDelta(a: number, b: number) {
   if (b === 0) return 0;
   return Math.round(((a - b) / b) * 100);
 }
 
-function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
-  const w = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  return (
-    <View style={s.miniBarBg}>
-      <View style={[s.miniBarFill, { width: `${w}%` as any, backgroundColor: color }]} />
-    </View>
-  );
+function getLast7Months(): string[] {
+  const now = new Date();
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (6 - i), 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 }
 
-function Sparkline({ values, alerta }: { values: number[]; alerta: boolean }) {
-  if (values.length < 2) return null;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
-  const H = 28;
-  const BAR_W = 10;
-  const GAP   = 4;
-  const color = alerta ? '#EF4444' : '#7C3AED';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: H, gap: GAP }}>
-      {values.map((v, i) => {
-        const h = Math.max(4, ((v - min) / range) * H);
-        const isLast = i === values.length - 1;
-        return (
-          <View key={i} style={{
-            width: BAR_W, height: h, borderRadius: 3,
-            backgroundColor: isLast ? color : color + '55',
-          }} />
-        );
-      })}
-    </View>
-  );
-}
-
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function Analisis() {
-  const [summaries, setSummaries]   = useState<MonthSummary[]>([]);
-  const [productos, setProductos]   = useState<ProductoPrecio[]>([]);
-  const [currency,  setCurrency]    = useState('PEN');
-  const [loading,   setLoading]     = useState(true);
-  const [tab,       setTab]         = useState<'meses' | 'categorias' | 'precios'>('meses');
+  const { width: screenW } = useWindowDimensions();
 
+  const now        = new Date();
+  const currentMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const allMonths  = getLast7Months();
+
+  const [tab,       setTab]       = useState<'resumen' | 'categorias' | 'precios'>('resumen');
+  const [mesSel,    setMesSel]    = useState(currentMes);
+  const [catSel,    setCatSel]    = useState<string | null>(null);
+  const [currency,  setCurrency]  = useState('PEN');
+  const [summaries, setSummaries] = useState<MonthSummary[]>([]);
+  const [subcats,   setSubcats]   = useState<Subcat[]>([]);
+  const [productos, setProductos] = useState<ProductoPrecio[]>([]);
+  const [selProd,   setSelProd]   = useState<string | null>(null);
+  const [loading,        setLoading]        = useState(true);
+  const [subcatsLoading, setSubcatsLoading] = useState(false);
+
+  const { rate }  = useExchangeRate();
+  const fadeAnim  = useRef(new Animated.Value(1)).current;
+
+  // Responsive chart widths
+  const heroSparkW  = screenW - 32 - 44;   // hero card width minus label/padding
+  const bentoSparkW = (screenW - 48) / 2 - 28;
+  const expandW     = screenW - 64;
+
+  // ── Main data fetch ──────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -81,14 +117,19 @@ export default function Analisis() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || !active) return;
 
+        const since = allMonths[0] + '-01T00:00:00';
+
         const [profRes, txRes, detRes] = await Promise.all([
           supabase.from('profiles').select('moneda_base').eq('id', user.id).single(),
-          supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,creado_en,moneda,tipo_cambio')
+          supabase
+            .from('transacciones')
+            .select('tipo,monto,categoria,creado_en,fecha,moneda,tipo_cambio')
             .eq('user_id', user.id)
             .eq('activo', true)
+            .gte('creado_en', since)
             .order('creado_en', { ascending: true }),
-          supabase.from('transaccion_detalles')
+          supabase
+            .from('transaccion_detalles')
             .select('producto,precio_unitario,transacciones!inner(creado_en,user_id)')
             .eq('transacciones.user_id', user.id),
         ]);
@@ -97,36 +138,42 @@ export default function Analisis() {
         const cur = (profRes.data as any)?.moneda_base ?? 'PEN';
         setCurrency(cur);
 
-        // ── Build monthly summaries ────────────────────────────────────────
+        // Build monthly summaries with USD→PEN conversion
         const txs = (txRes.data ?? []) as any[];
         const byMonth: Record<string, MonthSummary> = {};
         txs.forEach(tx => {
-          const mes = tx.creado_en.slice(0, 7);
+          const dateStr = tx.fecha ?? tx.creado_en.slice(0, 10);
+          const mes     = dateStr.slice(0, 7);
           if (!byMonth[mes]) byMonth[mes] = { mes, ingresos: 0, gastos: 0, porCat: {} };
-          const amt = Number(tx.monto);
-          if (tx.tipo === 'ingreso') byMonth[mes].ingresos += amt;
-          else {
+
+          const mon = tx.moneda ?? 'PEN';
+          const amt = mon === 'USD'
+            ? Number(tx.monto) * (Number(tx.tipo_cambio) || rate.venta)
+            : Number(tx.monto);
+
+          if (tx.tipo === 'ingreso') {
+            byMonth[mes].ingresos += amt;
+          } else {
             byMonth[mes].gastos += amt;
             byMonth[mes].porCat[tx.categoria] = (byMonth[mes].porCat[tx.categoria] ?? 0) + amt;
           }
         });
-        const sorted = Object.values(byMonth).sort((a, b) => a.mes.localeCompare(b.mes));
-        setSummaries(sorted);
 
-        // ── Build product price history ────────────────────────────────────
+        setSummaries(
+          allMonths.map(m => byMonth[m] ?? { mes: m, ingresos: 0, gastos: 0, porCat: {} })
+        );
+
+        // Build product price history
         const dets = (detRes.data ?? []) as any[];
         const byProd: Record<string, { mes: string; precio: number }[]> = {};
         dets.forEach(d => {
           const tx = d.transacciones as any;
           if (!tx?.creado_en) return;
-          const mes      = tx.creado_en.slice(0, 7);
-          const key      = d.producto.toLowerCase().trim();
-          const nombre   = d.producto;
-          if (!byProd[nombre]) byProd[nombre] = [];
-          byProd[nombre].push({ mes, precio: Number(d.precio_unitario) });
+          const mes = tx.creado_en.slice(0, 7);
+          if (!byProd[d.producto]) byProd[d.producto] = [];
+          byProd[d.producto].push({ mes, precio: Number(d.precio_unitario) });
         });
 
-        // Aggregate by product+month (avg per month)
         const prodList: ProductoPrecio[] = [];
         Object.entries(byProd).forEach(([nombre, entradas]) => {
           const porMes: Record<string, number[]> = {};
@@ -135,400 +182,666 @@ export default function Analisis() {
             porMes[e.mes].push(e.precio);
           });
           const historia = Object.entries(porMes)
-            .sort(([a],[b]) => a.localeCompare(b))
+            .sort(([a], [b]) => a.localeCompare(b))
             .map(([mes, precios]) => ({
               mes,
-              precio: Math.round((precios.reduce((s,p)=>s+p,0) / precios.length) * 100) / 100,
+              precio: Math.round((precios.reduce((s, p) => s + p, 0) / precios.length) * 100) / 100,
             }));
-          if (historia.length < 2) return;
-          const precios   = historia.map(h => h.precio);
-          const precioUlt = precios[precios.length - 1];
-          const precioAvg = Math.round((precios.slice(0, -1).reduce((s,p)=>s+p,0) / (precios.length-1)) * 100) / 100;
-          const pctChange = precioAvg > 0 ? Math.round(((precioUlt - precioAvg) / precioAvg) * 100) : 0;
-          prodList.push({
-            producto:  nombre,
-            historia,
-            precioUlt,
-            precioAvg,
-            pctChange,
-            alerta:    precioUlt > precioAvg * 1.1,
-          });
+          if (historia.length < 1) return;
+          const precios    = historia.map(h => h.precio);
+          const precioUlt  = precios[precios.length - 1];
+          const precioAvg  = precios.length > 1
+            ? Math.round((precios.slice(0, -1).reduce((s, p) => s + p, 0) / (precios.length - 1)) * 100) / 100
+            : precioUlt;
+          const pctChange  = precioAvg > 0 ? Math.round(((precioUlt - precioAvg) / precioAvg) * 100) : 0;
+          prodList.push({ producto: nombre, historia, precioUlt, precioAvg, pctChange, alerta: pctChange > 5 });
         });
-
-        // Sort: alertas first, then by pctChange desc
-        prodList.sort((a, b) => {
-          if (a.alerta !== b.alerta) return a.alerta ? -1 : 1;
-          return b.pctChange - a.pctChange;
-        });
+        prodList.sort((a, b) => { if (a.alerta !== b.alerta) return a.alerta ? -1 : 1; return b.pctChange - a.pctChange; });
         setProductos(prodList);
-
         setLoading(false);
       })();
       return () => { active = false; };
     }, [])
   );
 
-  const sym = SYM[currency] ?? currency;
-  const fmt = (n: number) => `${sym} ${n.toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  // ── Subcategory fetch when catSel or mesSel changes ──────────────────────────
+  useEffect(() => {
+    if (!catSel) { setSubcats([]); return; }
+    let active = true;
+    setSubcatsLoading(true);
+    setSubcats([]);
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !active) return;
+
+      const [y, m] = mesSel.split('-').map(Number);
+      const start  = `${mesSel}-01`;
+      const endD   = new Date(y, m, 1);
+      const end    = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-01`;
+
+      const [scRes, txRes] = await Promise.all([
+        supabase.from('subcategorias').select('id,nombre').eq('categoria_nombre', catSel),
+        supabase
+          .from('transacciones')
+          .select('subcategoria_id,monto,moneda,tipo_cambio')
+          .eq('user_id', user.id)
+          .eq('tipo', 'gasto')
+          .eq('categoria', catSel)
+          .eq('activo', true)
+          .or(
+            `and(fecha.gte.${start},fecha.lt.${end}),` +
+            `and(fecha.is.null,creado_en.gte.${start}T00:00:00,creado_en.lt.${end}T00:00:00)`
+          ),
+      ]);
+
+      if (!active) return;
+      const names: Record<string, string> = {};
+      (scRes.data ?? []).forEach((sc: any) => { names[sc.id] = sc.nombre; });
+
+      const bySubcat: Record<string, number> = {};
+      (txRes.data ?? []).forEach((tx: any) => {
+        const mon = tx.moneda ?? 'PEN';
+        const amt = mon === 'USD' ? Number(tx.monto) * (Number(tx.tipo_cambio) || rate.venta) : Number(tx.monto);
+        const key = tx.subcategoria_id ?? '__none__';
+        bySubcat[key] = (bySubcat[key] ?? 0) + amt;
+      });
+
+      const result: Subcat[] = Object.entries(bySubcat)
+        .filter(([, v]) => v > 0)
+        .map(([id, total]) => ({
+          id:     id === '__none__' ? null : id,
+          nombre: id === '__none__' ? 'Sin subcategoría' : (names[id] ?? 'Desconocida'),
+          total,
+        }))
+        .sort((a, b) => b.total - a.total);
+
+      setSubcats(result);
+      setSubcatsLoading(false);
+    })();
+    return () => { active = false; };
+  }, [catSel, mesSel]);
+
+  // ── Derived values ────────────────────────────────────────────────────────────
+  const sym  = SYM[currency] ?? currency;
+  const fmt  = (n: number) => `${sym} ${Math.round(n).toLocaleString('es-PE')}`;
   const fmtP = (n: number) => `${sym} ${n.toFixed(2)}`;
 
-  function fmtMes(ym: string) {
-    const [y, m] = ym.split('-');
-    return `${MONTHS_ES[parseInt(m, 10) - 1]} ${y}`;
-  }
+  const selSum  = summaries.find(s => s.mes === mesSel) ?? { mes: mesSel, ingresos: 0, gastos: 0, porCat: {} };
+  const prevIdx = summaries.findIndex(s => s.mes === mesSel) - 1;
+  const prevSum = prevIdx >= 0 ? summaries[prevIdx] : null;
 
-  // ── Insights ──────────────────────────────────────────────────────────────
-  function generateInsights(): string[] {
-    const insights: string[] = [];
-    if (summaries.length < 2) return insights;
-    const last = summaries[summaries.length - 1];
-    const prev = summaries[summaries.length - 2];
+  const catsForMes = Object.entries(selSum.porCat).sort(([, a], [, b]) => b - a);
+  const catTotal   = catSel ? (selSum.porCat[catSel] ?? 0) : selSum.gastos;
+  const catPrev    = catSel ? (prevSum?.porCat[catSel] ?? 0) : (prevSum?.gastos ?? 0);
+  const catDelta   = pctDelta(catTotal, catPrev);
+  const catSpark   = summaries.map(s => catSel ? (s.porCat[catSel] ?? 0) : s.gastos);
+  const subcatsTotal = subcats.reduce((acc, sc) => acc + sc.total, 0);
+  const alertas    = productos.filter(p => p.alerta);
+  const maxBar     = Math.max(...summaries.map(s => Math.max(s.ingresos, s.gastos)), 1);
+  const hasData    = summaries.some(s => s.gastos > 0 || s.ingresos > 0);
 
-    const balLast = last.ingresos - last.gastos;
-    const balPrev = prev.ingresos - prev.gastos;
-    if (balLast > balPrev) {
-      insights.push(`✅ Tu balance en ${fmtMes(last.mes)} (${fmt(balLast)}) mejoró respecto a ${fmtMes(prev.mes)} (${fmt(balPrev)}).`);
-    } else if (balLast < balPrev) {
-      insights.push(`⚠️ Tu balance bajó de ${fmt(balPrev)} en ${fmtMes(prev.mes)} a ${fmt(balLast)} en ${fmtMes(last.mes)}. Revisa tus gastos.`);
-    }
+  // ── Tab switch with fade ──────────────────────────────────────────────────────
+  const switchTab = (t: typeof tab) => {
+    Animated.sequence([
+      Animated.timing(fadeAnim, { toValue: 0, duration: 80,  useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+    setTab(t);
+    setCatSel(null);
+    setSelProd(null);
+  };
 
-    const gPct = pct(last.gastos, prev.gastos);
-    if (Math.abs(gPct) >= 5) {
-      const dir = gPct > 0 ? 'aumentaron' : 'bajaron';
-      insights.push(`${gPct > 0 ? '📈' : '📉'} Tus gastos totales ${dir} un ${Math.abs(gPct)}% respecto al mes anterior.`);
-    }
-
-    const allCats = new Set([...Object.keys(last.porCat), ...Object.keys(prev.porCat)]);
-    allCats.forEach(cat => {
-      const a = last.porCat[cat] ?? 0;
-      const b = prev.porCat[cat] ?? 0;
-      if (b === 0 || a === 0) return;
-      const diff = pct(a, b);
-      if (diff >= 20) {
-        insights.push(`📌 Gastaste un ${diff}% más en ${cat} que el mes pasado (${fmt(a)} vs ${fmt(b)}).`);
-      } else if (diff <= -20) {
-        insights.push(`🎉 Redujiste un ${Math.abs(diff)}% en ${cat}. ¡Buen trabajo!`);
-      }
-    });
-
-    if (last.ingresos > 0) {
-      const savRate = Math.round(((last.ingresos - last.gastos) / last.ingresos) * 100);
-      if (savRate >= 20) insights.push(`💰 Tasa de ahorro: ${savRate}% en ${fmtMes(last.mes)}. ¡Dentro de la regla 50/30/20!`);
-      else if (savRate > 0) insights.push(`💡 Tasa de ahorro: ${savRate}% en ${fmtMes(last.mes)}. La meta recomendada es 20%.`);
-      else insights.push(`🚨 Tus gastos superaron tus ingresos en ${fmtMes(last.mes)}.`);
-    }
-
-    return insights.slice(0, 5);
-  }
-
-  const maxGastos   = Math.max(...summaries.map(s => s.gastos),   1);
-  const maxIngresos = Math.max(...summaries.map(s => s.ingresos), 1);
-  const insights    = generateInsights();
-
-  const lastMonth = summaries[summaries.length - 1];
-  const topCats   = lastMonth
-    ? Object.entries(lastMonth.porCat).sort((a, b) => b[1] - a[1]).slice(0, 6)
-    : [];
-
-  const alertas   = productos.filter(p => p.alerta);
-
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
-      <SafeAreaView style={{ backgroundColor: '#F8F9FB' }}>
-        <View style={s.header}>
-          <Text style={s.title}>📈 Análisis</Text>
+    <View style={s.screen}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.screen} />
+
+      <SafeAreaView style={{ backgroundColor: C.screen }}>
+        <View style={s.topBar}>
+          <Text style={s.topTitle}>Análisis</Text>
+          <View style={s.segmented}>
+            {(['resumen', 'categorias', 'precios'] as const).map(t => (
+              <TouchableOpacity
+                key={t}
+                style={[s.segBtn, tab === t && s.segBtnOn]}
+                onPress={() => switchTab(t)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.segText, tab === t && s.segTextOn]}>
+                  {t === 'resumen' ? 'Resumen' : t === 'categorias' ? 'Categorías' : 'Precios'}
+                </Text>
+                {t === 'precios' && alertas.length > 0 && <View style={s.alertDot} />}
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </SafeAreaView>
 
       {loading ? (
-        <ActivityIndicator color="#3B82F6" style={{ marginTop: 60 }} />
-      ) : summaries.length === 0 ? (
-        <View style={s.empty}>
+        <ActivityIndicator color={C.accent} style={{ marginTop: 60 }} />
+      ) : !hasData ? (
+        <View style={s.emptyState}>
           <Text style={{ fontSize: 40, marginBottom: 12 }}>📊</Text>
-          <Text style={s.emptyText}>Sin datos suficientes para analizar.{'\n'}Registra transacciones primero.</Text>
+          <Text style={s.emptyText}>Sin datos.{'\n'}Registra transacciones primero.</Text>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+          <Animated.View style={{ opacity: fadeAnim }}>
 
-          {/* ── Tabs ── */}
-          <View style={s.tabs}>
-            {(['meses', 'categorias', 'precios'] as const).map(t => (
-              <TouchableOpacity key={t} style={[s.tab, tab === t && s.tabOn]} onPress={() => setTab(t)}>
-                <Text style={[s.tabText, tab === t && s.tabTextOn]}>
-                  {t === 'meses' ? 'Por mes' : t === 'categorias' ? 'Categorías' : 'Precios'}
-                </Text>
-                {t === 'precios' && alertas.length > 0 && (
-                  <View style={s.badge}><Text style={s.badgeText}>{alertas.length}</Text></View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* ── TAB: Por mes ── */}
-          {tab === 'meses' && (
-            <>
-              <View style={s.card}>
-                <Text style={s.cardTitle}>Comparativo mensual {new Date().getFullYear()}</Text>
-                {summaries.map((sum, i) => {
-                  const bal = sum.ingresos - sum.gastos;
-                  const balColor = bal >= 0 ? '#22C55E' : '#DC2626';
-                  const prevSum = summaries[i - 1];
-                  const gastDiff = prevSum ? pct(sum.gastos, prevSum.gastos) : null;
-                  return (
-                    <View key={sum.mes} style={[s.monthRow, i < summaries.length - 1 && s.monthRowBorder]}>
-                      <View style={{ width: 44 }}>
-                        <Text style={s.monthLabel}>{fmtMes(sum.mes)}</Text>
-                      </View>
-                      <View style={{ flex: 1, gap: 4 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={s.barLabelIn}>↑</Text>
-                          <MiniBar value={sum.ingresos} max={maxIngresos} color="#22C55E" />
-                          <Text style={s.barAmt}>{fmt(sum.ingresos)}</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={s.barLabelOut}>↓</Text>
-                          <MiniBar value={sum.gastos} max={maxGastos} color="#EF4444" />
-                          <Text style={s.barAmt}>{fmt(sum.gastos)}</Text>
-                        </View>
-                      </View>
-                      <View style={{ alignItems: 'flex-end', marginLeft: 8 }}>
-                        <Text style={[s.balAmt, { color: balColor }]}>{bal >= 0 ? '+' : ''}{fmt(bal)}</Text>
-                        {gastDiff !== null && (
-                          <Text style={[s.diffLabel, { color: gastDiff > 0 ? '#EF4444' : '#22C55E' }]}>
-                            {gastDiff > 0 ? '▲' : '▼'} {Math.abs(gastDiff)}%
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {insights.length > 0 && (
-                <View style={s.card}>
-                  <Text style={s.cardTitle}>💡 Recomendaciones</Text>
-                  {insights.map((insight, i) => (
-                    <View key={i} style={[s.insightRow, i < insights.length - 1 && s.insightBorder]}>
-                      <Text style={s.insightText}>{insight}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </>
-          )}
-
-          {/* ── TAB: Por categoría ── */}
-          {tab === 'categorias' && lastMonth && (
-            <>
-              <View style={s.card}>
-                <Text style={s.cardTitle}>Top categorías — {fmtMes(lastMonth.mes)}</Text>
-                {topCats.map(([cat, amt], i) => {
-                  const maxCat = topCats[0][1];
-                  const prevMonth = summaries[summaries.length - 2];
-                  const prevAmt = prevMonth?.porCat[cat] ?? 0;
-                  const diff = prevAmt > 0 ? pct(amt, prevAmt) : null;
-                  return (
-                    <View key={cat} style={[s.catRow, i < topCats.length - 1 && s.catRowBorder]}>
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <Text style={s.catName}>{cat}</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            {diff !== null && (
-                              <Text style={[s.diffLabel, { color: diff > 0 ? '#EF4444' : '#22C55E' }]}>
-                                {diff > 0 ? '▲' : '▼'} {Math.abs(diff)}%
-                              </Text>
-                            )}
-                            <Text style={s.catAmt}>{fmt(amt)}</Text>
-                          </View>
-                        </View>
-                        <MiniBar value={amt} max={maxCat} color="#7C3AED" />
-                        {prevAmt > 0 && (
-                          <Text style={s.catPrevText}>Mes anterior: {fmt(prevAmt)}</Text>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {lastMonth.gastos > 0 && (
-                <View style={s.card}>
-                  <Text style={s.cardTitle}>Distribución del gasto</Text>
-                  {topCats.map(([cat, amt]) => {
-                    const p = Math.round((amt / lastMonth.gastos) * 100);
-                    return (
-                      <View key={cat} style={s.distRow}>
-                        <Text style={s.distCat}>{cat}</Text>
-                        <View style={s.distBar}>
-                          <View style={[s.distFill, { width: `${p}%` as any }]} />
-                        </View>
-                        <Text style={s.distPct}>{p}%</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </>
-          )}
-
-          {/* ── TAB: Precios e Inflación ── */}
-          {tab === 'precios' && (
-            <>
-              {productos.length === 0 ? (
-                <View style={s.card}>
-                  <Text style={s.cardTitle}>📦 Precios e Inflación</Text>
-                  <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 36, marginBottom: 12 }}>🏷️</Text>
-                    <Text style={s.emptyText}>
-                      Importa tickets de supermercado para{'\n'}detectar variaciones de precios.
+            {/* ── Month pills (Resumen + Categorías) ── */}
+            {tab !== 'precios' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.pillRow}
+              >
+                {summaries.map(sum => (
+                  <TouchableOpacity
+                    key={sum.mes}
+                    style={[s.pill, sum.mes === mesSel && s.pillOn]}
+                    onPress={() => setMesSel(sum.mes)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.pillText, sum.mes === mesSel && s.pillTextOn]}>
+                      {fmtMes(sum.mes)}
                     </Text>
-                  </View>
-                </View>
-              ) : (
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* ════════ TAB: RESUMEN ════════ */}
+            {tab === 'resumen' && (() => {
+              const bal     = selSum.ingresos - selSum.gastos;
+              const savRate = selSum.ingresos > 0
+                ? Math.round(((selSum.ingresos - selSum.gastos) / selSum.ingresos) * 100)
+                : 0;
+              return (
                 <>
-                  {/* Alertas de inflación */}
-                  {alertas.length > 0 && (
-                    <View style={[s.card, { borderLeftWidth: 4, borderLeftColor: '#EF4444' }]}>
-                      <Text style={s.cardTitle}>🚨 Alerta de precios (+10% sobre promedio)</Text>
-                      {alertas.map((p, i) => (
-                        <View key={p.producto} style={[s.prodRow, i < alertas.length - 1 && s.prodRowBorder]}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={s.prodName} numberOfLines={1}>{p.producto}</Text>
-                            <Text style={s.prodMeta}>
-                              Promedio: {fmtP(p.precioAvg)} · Actual: {fmtP(p.precioUlt)}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                            <Text style={s.alertBadge}>▲ {p.pctChange}%</Text>
-                            <Sparkline values={p.historia.map(h => h.precio)} alerta />
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Todos los productos con historial */}
-                  <View style={s.card}>
-                    <Text style={s.cardTitle}>Evolución de precios por producto</Text>
-                    <Text style={s.priceSubtitle}>
-                      Precio unitario promedio mensual — última barra = más reciente
+                  {/* Balance hero */}
+                  <View style={s.heroCard}>
+                    <Text style={s.heroLabel}>BALANCE — {fmtMes(mesSel).toUpperCase()}</Text>
+                    <Text style={[s.heroAmt, { color: bal >= 0 ? C.green : C.red }]}>
+                      {bal >= 0 ? '+' : ''}{fmt(bal)}
                     </Text>
-                    {productos.map((p, i) => (
-                      <View key={p.producto} style={[s.prodRow, i < productos.length - 1 && s.prodRowBorder]}>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={s.prodName} numberOfLines={1}>{p.producto}</Text>
-                          <Text style={s.prodMeta}>
-                            {p.historia.map(h => `${fmtMes(h.mes).slice(0,3)}: ${fmtP(h.precio)}`).join('  ·  ')}
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 4, marginLeft: 8 }}>
-                          <Text style={[s.priceUlt, { color: p.alerta ? '#EF4444' : p.pctChange < 0 ? '#22C55E' : '#374151' }]}>
-                            {fmtP(p.precioUlt)}
-                          </Text>
-                          {p.pctChange !== 0 && (
-                            <Text style={[s.diffLabel, { color: p.pctChange > 0 ? '#EF4444' : '#22C55E' }]}>
-                              {p.pctChange > 0 ? '▲' : '▼'} {Math.abs(p.pctChange)}%
-                            </Text>
-                          )}
-                          <Sparkline values={p.historia.map(h => h.precio)} alerta={p.alerta} />
-                        </View>
+                    <View style={s.heroDivider} />
+                    <View style={s.heroRow}>
+                      <View style={s.heroCol}>
+                        <Text style={s.heroColLabel}>INGRESOS</Text>
+                        <Text style={[s.heroColAmt, { color: C.green }]}>{fmt(selSum.ingresos)}</Text>
                       </View>
-                    ))}
+                      <View style={s.heroColDiv} />
+                      <View style={s.heroCol}>
+                        <Text style={s.heroColLabel}>GASTOS</Text>
+                        <Text style={[s.heroColAmt, { color: C.red }]}>{fmt(selSum.gastos)}</Text>
+                      </View>
+                      {selSum.ingresos > 0 && (
+                        <>
+                          <View style={s.heroColDiv} />
+                          <View style={s.heroCol}>
+                            <Text style={s.heroColLabel}>AHORRO</Text>
+                            <Text style={[s.heroColAmt, { color: savRate >= 0 ? C.green : C.red }]}>
+                              {savRate}%
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
                   </View>
 
-                  {/* Resumen inflación */}
-                  <View style={[s.card, { backgroundColor: '#F0FDF4' }]}>
-                    <Text style={s.cardTitle}>📊 Resumen</Text>
-                    <View style={s.summaryRow}>
-                      <View style={s.summaryItem}>
-                        <Text style={s.summaryNum}>{productos.length}</Text>
-                        <Text style={s.summaryLabel}>Productos rastreados</Text>
-                      </View>
-                      <View style={s.summarySep} />
-                      <View style={s.summaryItem}>
-                        <Text style={[s.summaryNum, { color: '#EF4444' }]}>{alertas.length}</Text>
-                        <Text style={s.summaryLabel}>Con alza &gt;10%</Text>
-                      </View>
-                      <View style={s.summarySep} />
-                      <View style={s.summaryItem}>
-                        <Text style={[s.summaryNum, { color: '#22C55E' }]}>
-                          {productos.filter(p => p.pctChange < 0).length}
-                        </Text>
-                        <Text style={s.summaryLabel}>Con baja de precio</Text>
-                      </View>
+                  {/* Sparkline bento row */}
+                  <View style={s.bentoRow}>
+                    <View style={[s.bentoCard, { flex: 1 }]}>
+                      <Text style={s.bentoLabel}>GASTOS — TENDENCIA</Text>
+                      <SparklineChart
+                        values={summaries.map(sm => sm.gastos)}
+                        color={C.red}
+                        width={bentoSparkW}
+                        height={40}
+                      />
+                      <Text style={s.bentoSub}>7 meses</Text>
                     </View>
+                    <View style={[s.bentoCard, { flex: 1, marginLeft: 8 }]}>
+                      <Text style={s.bentoLabel}>INGRESOS — TENDENCIA</Text>
+                      <SparklineChart
+                        values={summaries.map(sm => sm.ingresos)}
+                        color={C.green}
+                        width={bentoSparkW}
+                        height={40}
+                      />
+                      <Text style={s.bentoSub}>7 meses</Text>
+                    </View>
+                  </View>
+
+                  {/* Monthly comparison */}
+                  <View style={s.card}>
+                    <Text style={s.cardTitle}>Comparativo mensual</Text>
+                    {summaries.map((sum, i) => {
+                      const bal2     = sum.ingresos - sum.gastos;
+                      const bColor   = bal2 >= 0 ? C.green : C.red;
+                      const isSel    = sum.mes === mesSel;
+                      return (
+                        <TouchableOpacity
+                          key={sum.mes}
+                          style={[s.monthRow, i < summaries.length - 1 && s.rowBorder, isSel && s.monthRowSel]}
+                          onPress={() => setMesSel(sum.mes)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[s.monthLabel, isSel && { color: C.accent, fontWeight: '700' }]}>
+                            {fmtMes(sum.mes)}
+                          </Text>
+                          <View style={s.barsCol}>
+                            <View style={s.barRow}>
+                              <View style={s.barBg}>
+                                <View style={[s.barFill, {
+                                  width: `${Math.min((sum.ingresos / maxBar) * 100, 100)}%` as any,
+                                  backgroundColor: C.green + '88',
+                                }]} />
+                              </View>
+                              <Text style={s.barAmt}>{fmt(sum.ingresos)}</Text>
+                            </View>
+                            <View style={[s.barRow, { marginTop: 3 }]}>
+                              <View style={s.barBg}>
+                                <View style={[s.barFill, {
+                                  width: `${Math.min((sum.gastos / maxBar) * 100, 100)}%` as any,
+                                  backgroundColor: C.red + '88',
+                                }]} />
+                              </View>
+                              <Text style={s.barAmt}>{fmt(sum.gastos)}</Text>
+                            </View>
+                          </View>
+                          <Text style={[s.balBadge, { color: bColor }]}>
+                            {bal2 >= 0 ? '+' : ''}{fmt(bal2)}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </>
-              )}
-            </>
-          )}
+              );
+            })()}
+
+            {/* ════════ TAB: CATEGORÍAS ════════ */}
+            {tab === 'categorias' && (
+              <>
+                {/* Category pills */}
+                {catsForMes.length > 0 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={[s.pillRow, { paddingTop: 0 }]}
+                  >
+                    <TouchableOpacity
+                      style={[s.pill, !catSel && s.pillOn]}
+                      onPress={() => setCatSel(null)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.pillText, !catSel && s.pillTextOn]}>Total</Text>
+                    </TouchableOpacity>
+                    {catsForMes.map(([cat]) => (
+                      <TouchableOpacity
+                        key={cat}
+                        style={[s.pill, catSel === cat && s.pillOn]}
+                        onPress={() => setCatSel(cat)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[s.pillText, catSel === cat && s.pillTextOn]}>
+                          {CAT_ICONS[cat] ?? '📦'} {cat}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+
+                {/* Hero card */}
+                <View style={s.heroCard}>
+                  <Text style={s.heroLabel}>
+                    {catSel
+                      ? `${CAT_ICONS[catSel] ?? '📦'} ${catSel.toUpperCase()} — ${fmtMes(mesSel).toUpperCase()}`
+                      : `TOTAL GASTOS — ${fmtMes(mesSel).toUpperCase()}`
+                    }
+                  </Text>
+                  <View style={s.heroAmtRow}>
+                    <Text style={s.heroAmt}>{fmt(catTotal)}</Text>
+                    {catPrev > 0 && (
+                      <View style={[s.deltaBadge, {
+                        backgroundColor: catDelta > 0 ? C.red + '22' : C.green + '22',
+                      }]}>
+                        <Text style={[s.deltaBadgeText, { color: catDelta > 0 ? C.red : C.green }]}>
+                          {catDelta > 0 ? '▲' : '▼'} {Math.abs(catDelta)}%
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={s.heroSparkRow}>
+                    <SparklineChart
+                      values={catSpark}
+                      color={catDelta > 5 ? C.red : catDelta < -5 ? C.green : C.accent}
+                      width={heroSparkW}
+                      height={48}
+                      strokeWidth={2}
+                    />
+                  </View>
+                  {catPrev > 0 && (
+                    <Text style={s.heroMeta}>
+                      Mes anterior: {fmt(catPrev)} · {catDelta > 0 ? 'Subió' : 'Bajó'} {Math.abs(catDelta)}%
+                    </Text>
+                  )}
+                </View>
+
+                {/* Subcategories card — only when a category is selected */}
+                {catSel && (
+                  <View style={s.card}>
+                    <Text style={s.cardTitle}>Subcategorías</Text>
+                    {subcatsLoading ? (
+                      <ActivityIndicator color={C.accent} style={{ marginVertical: 16 }} />
+                    ) : subcats.length === 0 ? (
+                      <Text style={s.emptyMini}>Sin subcategorías registradas este mes.</Text>
+                    ) : (
+                      subcats.map((sc, i) => {
+                        const share = subcatsTotal > 0 ? (sc.total / subcatsTotal) * 100 : 0;
+                        return (
+                          <View key={sc.id ?? 'none'} style={[s.subcatRow, i < subcats.length - 1 && s.rowBorder]}>
+                            <View style={s.subcatTitleRow}>
+                              <Text style={s.subcatName}>{sc.nombre}</Text>
+                              <Text style={s.subcatAmt}>{fmt(sc.total)}</Text>
+                            </View>
+                            <View style={s.microBarBg}>
+                              <View style={[s.microBarFill, {
+                                width: `${share}%` as any,
+                                backgroundColor: C.accent,
+                              }]} />
+                            </View>
+                            <Text style={s.subcatShare}>{Math.round(share)}% del total</Text>
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+                )}
+
+                {/* Distribution list */}
+                {catsForMes.length > 0 && (
+                  <View style={s.card}>
+                    <Text style={s.cardTitle}>Distribución — {fmtMes(mesSel)}</Text>
+                    {catsForMes.map(([cat, amt], i) => {
+                      const share    = selSum.gastos > 0 ? (amt / selSum.gastos) * 100 : 0;
+                      const prevAmt  = prevSum?.porCat[cat] ?? 0;
+                      const delta    = pctDelta(amt, prevAmt);
+                      const isFocus  = catSel === cat;
+                      return (
+                        <TouchableOpacity
+                          key={cat}
+                          style={[s.distRow, i < catsForMes.length - 1 && s.rowBorder]}
+                          onPress={() => setCatSel(isFocus ? null : cat)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={s.distIcon}>{CAT_ICONS[cat] ?? '📦'}</Text>
+                          <View style={s.distBody}>
+                            <View style={s.distTitleRow}>
+                              <Text style={[s.distCat, isFocus && { color: C.accent }]}>{cat}</Text>
+                              <View style={s.distRight}>
+                                {prevAmt > 0 && (
+                                  <Text style={[s.distDelta, { color: delta > 0 ? C.red : C.green }]}>
+                                    {delta > 0 ? '▲' : '▼'}{Math.abs(delta)}%
+                                  </Text>
+                                )}
+                                <Text style={s.distAmt}>{fmt(amt)}</Text>
+                              </View>
+                            </View>
+                            <View style={s.microBarBg}>
+                              <View style={[s.microBarFill, {
+                                width: `${share}%` as any,
+                                backgroundColor: isFocus ? C.accent : C.textMicro + '55',
+                              }]} />
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ════════ TAB: PRECIOS ════════ */}
+            {tab === 'precios' && (
+              <>
+                {/* Alert banner */}
+                {alertas.length > 0 && (
+                  <View style={s.alertBanner}>
+                    <Text style={s.alertBannerIcon}>⚠</Text>
+                    <Text style={s.alertBannerText}>
+                      {alertas.length} producto{alertas.length > 1 ? 's' : ''} con alza {'>'} 5% sobre el promedio
+                    </Text>
+                  </View>
+                )}
+
+                {/* Stats bento */}
+                <View style={s.bentoRow}>
+                  <View style={[s.bentoCard, { flex: 1 }]}>
+                    <Text style={s.bentoLabel}>RASTREADOS</Text>
+                    <Text style={s.bentoStatNum}>{productos.length}</Text>
+                  </View>
+                  <View style={[s.bentoCard, { flex: 1, marginLeft: 8 }]}>
+                    <Text style={s.bentoLabel}>CON ALZA</Text>
+                    <Text style={[s.bentoStatNum, { color: alertas.length > 0 ? C.red : C.textPrimary }]}>
+                      {alertas.length}
+                    </Text>
+                  </View>
+                  <View style={[s.bentoCard, { flex: 1, marginLeft: 8 }]}>
+                    <Text style={s.bentoLabel}>A LA BAJA</Text>
+                    <Text style={[s.bentoStatNum, { color: C.green }]}>
+                      {productos.filter(p => p.pctChange < 0).length}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Product list */}
+                {productos.length === 0 ? (
+                  <View style={[s.card, { alignItems: 'center', paddingVertical: 32 }]}>
+                    <Text style={{ fontSize: 36, marginBottom: 12 }}>🏷️</Text>
+                    <Text style={s.emptyText}>
+                      Registra compras con detalles de productos para rastrear precios.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={s.card}>
+                    <Text style={s.cardTitle}>Evolución de precios</Text>
+                    {productos.map((prod, i) => {
+                      const isExp    = selProd === prod.producto;
+                      const lineClr  = prod.alerta ? C.red : prod.pctChange < 0 ? C.green : C.accent;
+                      return (
+                        <View key={prod.producto}>
+                          <TouchableOpacity
+                            style={[s.prodRow, !isExp && i < productos.length - 1 && s.rowBorder]}
+                            onPress={() => setSelProd(isExp ? null : prod.producto)}
+                            activeOpacity={0.7}
+                          >
+                            <View style={s.prodLeft}>
+                              <View style={s.prodNameRow}>
+                                <Text style={s.prodName} numberOfLines={1}>{prod.producto}</Text>
+                                {prod.alerta && (
+                                  <View style={s.alertPill}>
+                                    <Text style={s.alertPillText}>▲ {prod.pctChange}%</Text>
+                                  </View>
+                                )}
+                                {!prod.alerta && prod.pctChange < 0 && (
+                                  <View style={[s.alertPill, { backgroundColor: C.green + '22' }]}>
+                                    <Text style={[s.alertPillText, { color: C.green }]}>
+                                      ▼ {Math.abs(prod.pctChange)}%
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={s.prodMeta}>
+                                Actual: {fmtP(prod.precioUlt)}
+                                {prod.historia.length > 1 ? ` · Prom: ${fmtP(prod.precioAvg)}` : ''}
+                              </Text>
+                            </View>
+                            <View style={s.prodRight}>
+                              <SparklineChart
+                                values={prod.historia.map(h => h.precio)}
+                                color={lineClr}
+                                width={60}
+                                height={28}
+                                strokeWidth={1.5}
+                              />
+                              <Text style={s.expandHint}>{isExp ? '▲' : '▼'}</Text>
+                            </View>
+                          </TouchableOpacity>
+
+                          {/* Expanded view */}
+                          {isExp && (
+                            <View style={[s.expandedBox, i < productos.length - 1 && s.rowBorder]}>
+                              <SparklineChart
+                                values={prod.historia.map(h => h.precio)}
+                                color={lineClr}
+                                width={expandW}
+                                height={64}
+                                strokeWidth={2}
+                              />
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                <View style={s.historyRow}>
+                                  {prod.historia.map(h => (
+                                    <View key={h.mes} style={s.historyCell}>
+                                      <Text style={s.historyMes}>{fmtMes(h.mes)}</Text>
+                                      <Text style={s.historyPrice}>{fmtP(h.precio)}</Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              </ScrollView>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
+            )}
+
+          </Animated.View>
         </ScrollView>
       )}
     </View>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 12,
-            paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  title:  { fontSize: 20, fontWeight: '800', color: '#111827' },
+  screen: { flex: 1, backgroundColor: C.screen },
+  scroll: { padding: 16, paddingBottom: 120 },
 
-  empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
+  // Top bar
+  topBar: {
+    paddingHorizontal: 20,
+    paddingTop:   Platform.OS === 'android' ? 44 : 14,
+    paddingBottom: 12,
+  },
+  topTitle:  { fontSize: 22, fontWeight: '800', color: C.textPrimary, letterSpacing: -0.3, marginBottom: 12 },
 
-  tabs:       { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 12, padding: 4, marginBottom: 16 },
-  tab:        { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, flexDirection: 'row', justifyContent: 'center', gap: 4 },
-  tabOn:      { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-  tabText:    { fontSize: 12, fontWeight: '500', color: '#9CA3AF' },
-  tabTextOn:  { color: '#111827', fontWeight: '700' },
-  badge:      { backgroundColor: '#EF4444', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
-  badgeText:  { color: '#fff', fontSize: 9, fontWeight: '800' },
+  // Segmented control
+  segmented: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 12, padding: 3 },
+  segBtn:    { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, flexDirection: 'row', justifyContent: 'center', gap: 4 },
+  segBtnOn:  { backgroundColor: C.card, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, elevation: 2 },
+  segText:   { fontSize: 12, fontWeight: '500', color: C.textSec },
+  segTextOn: { color: C.textPrimary, fontWeight: '700' },
+  alertDot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: C.red },
 
-  card:      { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14,
-               shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 14 },
+  // Pills
+  pillRow:    { flexDirection: 'row', paddingHorizontal: 0, paddingBottom: 12, paddingTop: 4, gap: 6 },
+  pill:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
+  pillOn:     { backgroundColor: C.textPrimary, borderColor: C.textPrimary },
+  pillText:   { fontSize: 12, fontWeight: '500', color: C.textSec },
+  pillTextOn: { color: '#fff', fontWeight: '600' },
 
-  monthRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  monthRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  monthLabel:     { fontSize: 11, fontWeight: '600', color: '#6B7280' },
-  barLabelIn:     { fontSize: 12, color: '#22C55E', fontWeight: '700', width: 14 },
-  barLabelOut:    { fontSize: 12, color: '#EF4444', fontWeight: '700', width: 14 },
-  barAmt:         { fontSize: 10, color: '#9CA3AF', width: 68, textAlign: 'right' },
-  balAmt:         { fontSize: 13, fontWeight: '700' },
-  diffLabel:      { fontSize: 10, fontWeight: '600', marginTop: 2 },
+  // Hero card
+  heroCard:    { backgroundColor: C.hero, borderRadius: 22, padding: 22, marginBottom: 10 },
+  heroLabel:   { fontSize: 9, fontWeight: '600', color: C.textLabel, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 10 },
+  heroAmt:     { fontSize: 40, fontWeight: '800', color: C.textHero, letterSpacing: -1.5 },
+  heroAmtRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  heroSparkRow:{ marginTop: 14 },
+  heroMeta:    { fontSize: 11, color: C.textMuted, marginTop: 10 },
+  heroDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 14 },
+  heroRow:     { flexDirection: 'row' },
+  heroCol:     { flex: 1 },
+  heroColDiv:  { width: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 10 },
+  heroColLabel:{ fontSize: 9, fontWeight: '600', color: C.textLabel, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
+  heroColAmt:  { fontSize: 16, fontWeight: '700', color: C.textHero },
 
-  miniBarBg:   { flex: 1, height: 6, backgroundColor: '#F3F4F6', borderRadius: 3, overflow: 'hidden' },
-  miniBarFill: { height: '100%', borderRadius: 3 },
+  deltaBadge:     { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  deltaBadgeText: { fontSize: 12, fontWeight: '700' },
 
-  insightRow:    { paddingVertical: 10 },
-  insightBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  insightText:   { fontSize: 13, color: '#374151', lineHeight: 20 },
+  // Bento row
+  bentoRow:    { flexDirection: 'row', marginBottom: 10 },
+  bentoCard:   { backgroundColor: C.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: C.border },
+  bentoLabel:  { fontSize: 9, fontWeight: '600', color: C.textMicro, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 },
+  bentoSub:    { fontSize: 10, color: C.textMicro, marginTop: 4 },
+  bentoStatNum:{ fontSize: 26, fontWeight: '800', color: C.textPrimary, letterSpacing: -0.5, marginTop: 4 },
 
-  catRow:       { paddingVertical: 10 },
-  catRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  catName:      { fontSize: 14, fontWeight: '600', color: '#111827' },
-  catAmt:       { fontSize: 14, fontWeight: '700', color: '#374151' },
-  catPrevText:  { fontSize: 11, color: '#9CA3AF', marginTop: 4 },
+  // Card
+  card:      { backgroundColor: C.card, borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: C.border },
+  cardTitle: { fontSize: 13, fontWeight: '700', color: C.textPrimary, marginBottom: 14 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' },
 
-  distRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
-  distCat:  { fontSize: 12, color: '#374151', width: 100 },
-  distBar:  { flex: 1, height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, overflow: 'hidden' },
-  distFill: { height: '100%', backgroundColor: '#7C3AED', borderRadius: 4 },
-  distPct:  { fontSize: 11, fontWeight: '600', color: '#7C3AED', width: 30, textAlign: 'right' },
+  // Monthly comparison
+  monthRow:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 8 },
+  monthRowSel: { backgroundColor: C.accent + '08', marginHorizontal: -4, paddingHorizontal: 4, borderRadius: 8 },
+  monthLabel:  { fontSize: 11, fontWeight: '500', color: C.textSec, width: 44 },
+  barsCol:     { flex: 1, gap: 3 },
+  barRow:      { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  barBg:       { flex: 1, height: 5, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 3, overflow: 'hidden' },
+  barFill:     { height: '100%' as any, borderRadius: 3 },
+  barAmt:      { fontSize: 10, color: C.textMicro, width: 58, textAlign: 'right' },
+  balBadge:    { fontSize: 11, fontWeight: '700', width: 68, textAlign: 'right' },
 
-  // Precios
-  prodRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  prodRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  prodName:      { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 3 },
-  prodMeta:      { fontSize: 10, color: '#9CA3AF', lineHeight: 14 },
-  priceUlt:      { fontSize: 14, fontWeight: '700', color: '#374151' },
-  alertBadge:    { backgroundColor: '#FEF2F2', color: '#DC2626', fontSize: 12,
-                   fontWeight: '700', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  priceSubtitle: { fontSize: 11, color: '#9CA3AF', marginBottom: 12, marginTop: -8 },
+  // Distribution
+  distRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 },
+  distIcon:     { fontSize: 18, width: 26, textAlign: 'center' },
+  distBody:     { flex: 1 },
+  distTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  distCat:      { fontSize: 13, fontWeight: '600', color: C.textPrimary },
+  distRight:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  distDelta:    { fontSize: 11, fontWeight: '600' },
+  distAmt:      { fontSize: 13, fontWeight: '700', color: C.textPrimary },
 
-  summaryRow:  { flexDirection: 'row', paddingTop: 4 },
-  summaryItem: { flex: 1, alignItems: 'center' },
-  summaryNum:  { fontSize: 22, fontWeight: '800', color: '#111827' },
-  summaryLabel:{ fontSize: 11, color: '#6B7280', textAlign: 'center', marginTop: 2 },
-  summarySep:  { width: 1, backgroundColor: '#E5E7EB', marginHorizontal: 8 },
+  // Micro progress bar
+  microBarBg:   { height: 3, backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 2, overflow: 'hidden', marginTop: 2 },
+  microBarFill: { height: '100%' as any, borderRadius: 2 },
+
+  // Subcategories
+  subcatRow:      { paddingVertical: 10 },
+  subcatTitleRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
+  subcatName:     { fontSize: 13, fontWeight: '600', color: C.textPrimary },
+  subcatAmt:      { fontSize: 13, fontWeight: '700', color: C.textPrimary },
+  subcatShare:    { fontSize: 10, color: C.textMicro, marginTop: 4 },
+
+  // Alert banner
+  alertBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.red + '12', borderRadius: 12, padding: 12, marginBottom: 10 },
+  alertBannerIcon: { fontSize: 16 },
+  alertBannerText: { flex: 1, fontSize: 13, color: C.red, fontWeight: '500' },
+
+  // Products
+  prodRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
+  prodLeft:    { flex: 1, minWidth: 0 },
+  prodNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+  prodName:    { fontSize: 14, fontWeight: '600', color: C.textPrimary, flexShrink: 1 },
+  prodMeta:    { fontSize: 11, color: C.textMicro },
+  prodRight:   { alignItems: 'flex-end', gap: 2 },
+  expandHint:  { fontSize: 10, color: C.textMicro },
+
+  alertPill:     { backgroundColor: C.red + '15', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  alertPillText: { fontSize: 11, fontWeight: '700', color: C.red },
+
+  expandedBox:  { paddingBottom: 12, paddingTop: 4 },
+  historyRow:   { flexDirection: 'row', gap: 12, marginTop: 10, paddingBottom: 4 },
+  historyCell:  { alignItems: 'center', minWidth: 52 },
+  historyMes:   { fontSize: 10, color: C.textMicro, marginBottom: 2 },
+  historyPrice: { fontSize: 12, fontWeight: '600', color: C.textPrimary },
+
+  // Empty states
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  emptyText:  { fontSize: 14, color: C.textSec, textAlign: 'center', lineHeight: 22 },
+  emptyMini:  { fontSize: 13, color: C.textMicro, textAlign: 'center', paddingVertical: 20 },
 });
