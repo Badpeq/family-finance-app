@@ -7,6 +7,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
+import { useCategorias, BASE_INCOME_CATS } from '@/hooks/useCategorias';
 
 // ── Types ─────────────────────────────────────────────────────
 type GastoTab   = 'unica' | 'recurrente' | 'cuotas';
@@ -26,10 +27,6 @@ const GASTO_TABS: { key: GastoTab; label: string }[] = [
   { key: 'recurrente', label: 'Gasto\nRecurrente' },
   { key: 'cuotas',     label: 'Compra en\nCuotas' },
 ];
-
-const CATEGORIAS_INGRESO = ['Sueldo', 'Freelance', 'Inversiones', 'Negocio', 'Ahorro', 'Otros'];
-const CATEGORIAS_GASTO   = ['Alimentación', 'Transporte', 'Vivienda', 'Entretenimiento',
-                             'Salud', 'Educación', 'Ropa', 'Servicios', 'Otros'];
 
 const CURRENCY_SYMBOL: Record<string, string> = {
   PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$',
@@ -63,6 +60,9 @@ export default function Registrar() {
   const accent    = esIngreso ? '#059669' : '#DC2626';
   const headerBg  = esIngreso ? '#D1FAE5' : '#FEE2E2';
 
+  // ── Categorías dinámicas desde DB
+  const { categorias: catGasto } = useCategorias();
+
   // ── Multi-moneda
   const { rate } = useExchangeRate();
   // txMoneda: moneda en la que el usuario está ingresando este movimiento
@@ -76,8 +76,14 @@ export default function Registrar() {
   const [loading,           setLoading]           = useState(false);
   const [error,             setError]             = useState('');
   const [showPicker,        setShowPicker]        = useState(false);
+  const [showSubcatPicker,  setShowSubcatPicker]  = useState(false);
   const [showTarjetaPicker, setShowTarjetaPicker] = useState(false);
   const [showNuevaTarjeta,  setShowNuevaTarjeta]  = useState(false);
+
+  // ── Subcategorías (solo gasto único)
+  const [subcatId,       setSubcatId]       = useState<string | null>(null);
+  const [subcats,        setSubcats]        = useState<{ id: string; nombre: string }[]>([]);
+  const [subcatsLoading, setSubcatsLoading] = useState(false);
   const [savingTarjeta,     setSavingTarjeta]     = useState(false);
 
   // ── Tarjetas
@@ -108,7 +114,9 @@ export default function Registrar() {
   }, []); // esIngreso is constant for the lifetime of this screen
 
   // ── Derived
-  const pickerCategorias = esIngreso ? CATEGORIAS_INGRESO : CATEGORIAS_GASTO;
+  const pickerCategorias = esIngreso
+    ? BASE_INCOME_CATS.map(c => c.nombre)
+    : catGasto.map(c => c.nombre);
   const categoriaActual  = esIngreso
     ? iU.categoria
     : gastoTab === 'unica' ? gU.categoria
@@ -125,11 +133,30 @@ export default function Registrar() {
   })();
 
   // ── Handlers
+  const loadSubcats = async (cat: string) => {
+    setSubcatId(null);
+    setSubcats([]);
+    setSubcatsLoading(true);
+    const { data } = await supabase
+      .from('subcategorias')
+      .select('id,nombre')
+      .eq('categoria_nombre', cat)
+      .order('nombre');
+    setSubcats(data ?? []);
+    setSubcatsLoading(false);
+  };
+
   const selectCategoria = (cat: string) => {
-    if (esIngreso)                      setIU(s => ({ ...s, categoria: cat }));
-    else if (gastoTab === 'unica')      setGU(s => ({ ...s, categoria: cat }));
-    else if (gastoTab === 'recurrente') setGR(s => ({ ...s, categoria: cat }));
-    else                                setGC(s => ({ ...s, categoria: cat }));
+    if (esIngreso) {
+      setIU(s => ({ ...s, categoria: cat }));
+    } else if (gastoTab === 'unica') {
+      setGU(s => ({ ...s, categoria: cat }));
+      loadSubcats(cat);
+    } else if (gastoTab === 'recurrente') {
+      setGR(s => ({ ...s, categoria: cat }));
+    } else {
+      setGC(s => ({ ...s, categoria: cat }));
+    }
     setShowPicker(false);
   };
 
@@ -196,6 +223,7 @@ export default function Registrar() {
         categoria: gU.categoria, descripcion: gU.descripcion.trim() || null,
         metodo_pago: gU.metodoPago,
         tarjeta_id: gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
+        subcategoria_id: subcatId ?? null,
         moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
       });
       dbError = e;
@@ -403,6 +431,25 @@ export default function Registrar() {
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
+            {gU.categoria !== '' && (
+              <>
+                <Text style={styles.label}>Subcategoría <Text style={styles.optional}>(opcional)</Text></Text>
+                {subcatsLoading ? (
+                  <ActivityIndicator color={accent} style={{ marginVertical: 8, alignSelf: 'flex-start' }} />
+                ) : subcats.length > 0 ? (
+                  <TouchableOpacity style={styles.selector} onPress={() => setShowSubcatPicker(true)} disabled={loading}>
+                    <Text style={subcatId ? styles.selectorText : styles.selectorPlaceholder}>
+                      {subcats.find(s => s.id === subcatId)?.nombre ?? 'Sin subcategoría'}
+                    </Text>
+                    <Text style={styles.chevron}>›</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={[styles.hint, { marginTop: 0 }]}>
+                    <Text style={styles.hintText}>Sin subcategorías para esta categoría.</Text>
+                  </View>
+                )}
+              </>
+            )}
             <Text style={styles.label}>Método de pago</Text>
             <MetodoPagoToggle
               metodoPago={gU.metodoPago}
@@ -547,6 +594,34 @@ export default function Registrar() {
         </TouchableOpacity>
         <View style={{ height: 48 }} />
       </ScrollView>
+
+      {/* ── Subcategory Picker ── */}
+      <Modal visible={showSubcatPicker} animationType="slide" transparent>
+        <SafeAreaView style={styles.backdrop}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Selecciona una subcategoría</Text>
+              <TouchableOpacity onPress={() => setShowSubcatPicker(false)}>
+                <Text style={[styles.closeBtn, { color: accent }]}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={[{ id: null as string | null, nombre: 'Sin subcategoría' }, ...subcats]}
+              keyExtractor={(item, i) => item.id ?? `none-${i}`}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.option}
+                  onPress={() => { setSubcatId(item.id); setShowSubcatPicker(false); }}
+                >
+                  <Text style={styles.optionText}>{item.nombre}</Text>
+                  {subcatId === item.id && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
+                </TouchableOpacity>
+              )}
+              ItemSeparatorComponent={() => <View style={styles.sep} />}
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* ── Category Picker ── */}
       <Modal visible={showPicker} animationType="slide" transparent>
