@@ -95,11 +95,10 @@ export default function Dashboard() {
           supabase.from('presupuestos')
             .select('categoria,monto_limite')
             .eq('user_id', user.id).eq('periodo', periodoDate),
-          supabase.from('gastos_recurrentes')
-            .select('id,monto,descripcion')
-            .eq('user_id', user.id)
-            .lte('mes_inicio', periodoDate)
-            .or(`mes_fin.is.null,mes_fin.gte.${periodoDate}`),
+          // Vista que ya calcula aplicado para recurrentes Y cuotas
+          supabase.from('v_gastos_programados_mes')
+            .select('id,monto_cuota,descripcion,tipo_programado')
+            .eq('aplicado', false),
         ]);
 
         if (!active) return;
@@ -124,17 +123,14 @@ export default function Dashboard() {
           setPresupuestos(budData as Presupuesto[]);
         }
 
-        // Compromisos pendientes = recurrentes activos sin transacción este mes
-        if (active && recRes.data && txRes.data) {
-          const appliedIds = new Set(
-            (txRes.data as any[])
-              .filter(t => t.gastos_recurrentes_id)
-              .map(t => t.gastos_recurrentes_id as string)
-          );
+        // Compromisos pendientes = recurrentes + cuotas no aplicados este mes (vía vista)
+        if (active && recRes.data) {
           setPendingCommits(
-            (recRes.data as any[])
-              .filter(r => !appliedIds.has(r.id))
-              .map(r => ({ id: r.id, monto: Number(r.monto), descripcion: r.descripcion }))
+            (recRes.data as any[]).map(r => ({
+              id:          r.id,
+              monto:       Number(r.monto_cuota),
+              descripcion: r.descripcion,
+            }))
           );
         }
 
