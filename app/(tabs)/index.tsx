@@ -506,7 +506,7 @@ export default function Dashboard() {
         onPress={() => setShowQuickAdd(true)}
         activeOpacity={0.75}
       >
-        <Text style={s.fabText}>＋  Quick Add</Text>
+        <Text style={s.fabText}>＋  Anotar</Text>
       </TouchableOpacity>
 
       {/* ── Quick Add bottom sheet ── */}
