@@ -254,6 +254,9 @@ export default function Mas() {
         <View style={s.group}>
           {[
             { icon: '📊', label: 'Historial completo',    sub: 'Buscar y filtrar transacciones',   fn: () => router.push('/historial') },
+            { icon: '🔄', label: 'Compromisos Fijos',    sub: 'Recurrentes y cuotas del mes',     fn: () => router.push('/compromisos') },
+            { icon: '💸', label: 'Gestionar Deudas',    sub: 'Editar recurrentes y cuotas',       fn: () => router.push('/gestionar-deudas') },
+            { icon: '🏷️', label: 'Gestionar Categorías', sub: 'Añadir categorías y subcategorías',fn: () => router.push('/gestionar-categorias') },
             { icon: '📈', label: 'Análisis financiero',   sub: 'Comparativo mensual y tendencias', fn: () => router.push('/(tabs)/analisis') },
             ...(profile?.modulo_tarjetas !== false || profile?.modulo_prestamos ? [{ icon: '💳', label: 'Pagos de tarjetas', sub: 'Registrar pagos a deudas', fn: () => router.push(`/pagos?moneda=${profile?.moneda_base ?? 'PEN'}`) }] : []),
             ...(profile?.modulo_prestamos ? [{ icon: '📋', label: 'Gestión de préstamos', sub: 'Abonos y seguimiento', fn: () => router.push(`/prestamos?moneda=${profile?.moneda_base ?? 'PEN'}`) }] : []),

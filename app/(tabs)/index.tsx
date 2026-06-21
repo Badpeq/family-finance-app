@@ -1,17 +1,47 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Platform, ActivityIndicator, Modal, TextInput,
-  StatusBar, SafeAreaView, Switch,
+  Platform, ActivityIndicator, Modal, StatusBar, SafeAreaView,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
-import { toPEN } from '@/services/exchangeRate';
 
-interface Profile     { nombre: string; moneda_base: string; modulo_ahorros: boolean; modulo_prestamos: boolean; modulo_tarjetas: boolean; presupuesto_template: Record<string,number> | null }
-interface Transaccion { id: string; tipo: 'ingreso'|'gasto'; monto: number; categoria: string; descripcion: string|null; metodo_pago: string|null; creado_en: string; moneda?: string; tipo_cambio?: number }
-interface Presupuesto { categoria: string; monto_limite: number; seguimiento_diario: boolean }
+// ── Interfaces ────────────────────────────────────────────────────────────────
+
+interface Profile {
+  nombre: string; moneda_base: string;
+  modulo_ahorros: boolean; modulo_prestamos: boolean; modulo_tarjetas: boolean;
+  presupuesto_template: Record<string, number> | null;
+}
+interface Transaccion {
+  id: string; tipo: 'ingreso' | 'gasto'; monto: number; categoria: string;
+  descripcion: string | null; metodo_pago: string | null; creado_en: string;
+  moneda?: string; tipo_cambio?: number; es_gasto_unico?: boolean | null;
+}
+interface Presupuesto { categoria: string; monto_limite: number }
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+
+const C = {
+  screen:     '#F7F8FA',
+  hero:       '#080C10',
+  heroSurf:   '#111620',
+  card:       '#FFFFFF',
+  border:     'rgba(0,0,0,0.06)',
+  textPrimary:'#0D1117',
+  textSec:    '#6B7280',
+  textMicro:  '#9CA3AF',
+  textHero:   '#FFFFFF',
+  textMuted:  'rgba(255,255,255,0.45)',
+  textLabel:  'rgba(255,255,255,0.30)',
+  accent:     '#7C3AED',
+  green:      '#00D084',
+  amber:      '#F59E0B',
+  red:        '#FF3B30',
+};
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const ICON: Record<string, string> = {
   Sueldo:'💼', Bono:'🎁', Freelance:'💻', Inversiones:'📈', Negocio:'🏪',
@@ -19,620 +49,663 @@ const ICON: Record<string, string> = {
   Alimentación:'🛒', Transporte:'🚗', Vivienda:'🏠', Entretenimiento:'🎬',
   Salud:'💊', Educación:'📚', Ropa:'👕', Servicios:'⚡', Restaurantes:'🍽️', Otros:'📦',
 };
-const CATS_GASTO = ['Alimentación','Transporte','Vivienda','Entretenimiento','Salud','Educación','Ropa','Servicios','Restaurantes','Otros'];
-const SYM: Record<string,string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
+const SYM: Record<string, string> = { PEN:'S/', USD:'$', EUR:'€', BRL:'R$', COP:'$', MXN:'$', ARS:'$', CLP:'$' };
 const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
 function fmt(n: number, cur: string) {
-  return `${SYM[cur] ?? cur} ${n.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  return `${SYM[cur] ?? cur} ${n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function budgetColor(pct: number) {
-  if (pct >= 0.9) return '#DC2626';
-  if (pct >= 0.7) return '#F59E0B';
-  return '#22C55E';
-}
-
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  const max = Math.max(...values, 1);
-  return (
-    <View style={{ flexDirection:'row', alignItems:'flex-end', height:20, gap:2 }}>
-      {values.map((v, i) => (
-        <View key={i} style={{
-          width: 3,
-          height: Math.max(2, (v / max) * 20),
-          backgroundColor: color,
-          borderRadius: 2,
-          opacity: 0.3 + (i / Math.max(values.length - 1, 1)) * 0.7,
-        }} />
-      ))}
-    </View>
-  );
-}
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [profile,      setProfile]      = useState<Profile|null>(null);
+  const [profile,      setProfile]      = useState<Profile | null>(null);
   const [txs,          setTxs]          = useState<Transaccion[]>([]);
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
-  const [gastosPorCat, setGastosPorCat] = useState<Record<string,number>>({});
-  const [gastosHoy,    setGastosHoy]    = useState<Record<string,number>>({});
+  const [gastosPorCat, setGastosPorCat] = useState<Record<string, number>>({});
   const [loading,      setLoading]      = useState(true);
+  const [showAllCats,       setShowAllCats]       = useState(false);
+  const [showQuickAdd,      setShowQuickAdd]      = useState(false);
+  const [showProyectadoInfo,setShowProyectadoInfo]= useState(false);
 
-  // Quick Add modal
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  // Presupuesto add modal
-  const [showNewBudget,     setShowNewBudget]     = useState(false);
-  const [newBudCat,         setNewBudCat]         = useState('');
-  const [newBudMonto,       setNewBudMonto]       = useState('');
-  const [newBudSeguimiento, setNewBudSeguimiento] = useState(false);
-  const [newBudError,       setNewBudError]       = useState('');
-  const [newBudSaving,      setNewBudSaving]      = useState(false);
-  const [showBudPicker,     setShowBudPicker]     = useState(false);
+  const { rate } = useExchangeRate();
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
         setLoading(true);
-        const { data:{ user } } = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
         if (!user || !active) return;
         const now          = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const periodoDate  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+        const periodoDate  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
         const [pRes, txRes, budRes] = await Promise.all([
-          supabase.from('profiles').select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template').eq('id', user.id).single(),
+          supabase.from('profiles')
+            .select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template')
+            .eq('id', user.id).single(),
           supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio')
+            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio,es_gasto_unico')
             .eq('user_id', user.id).eq('activo', true)
             .gte('creado_en', startOfMonth)
             .order('creado_en', { ascending: false }).limit(200),
           supabase.from('presupuestos')
-            .select('categoria,monto_limite,seguimiento_diario')
+            .select('categoria,monto_limite')
             .eq('user_id', user.id).eq('periodo', periodoDate),
         ]);
 
         if (!active) return;
-        if (pRes.data)   setProfile(pRes.data as Profile);
-        if (txRes.data)  setTxs(txRes.data as Transaccion[]);
+        if (pRes.data)  setProfile(pRes.data as Profile);
+        if (txRes.data) setTxs(txRes.data as Transaccion[]);
 
-        // Auto-replicar presupuestos: si no hay ninguno este mes pero el perfil
-        // tiene un template guardado, crear los presupuestos automáticamente.
         const budData = budRes.data ?? [];
         if (budData.length === 0 && pRes.data) {
-          const template = (pRes.data as any).presupuesto_template as Record<string,number> | null;
+          const template = (pRes.data as any).presupuesto_template as Record<string, number> | null;
           if (template && Object.keys(template).length > 0) {
             const upserts = Object.entries(template).map(([cat, monto]) => ({
               user_id: user.id, categoria: cat, monto_limite: monto, periodo: periodoDate,
             }));
-            const { data: created } = await supabase
-              .from('presupuestos')
+            const { data: created } = await supabase.from('presupuestos')
               .upsert(upserts, { onConflict: 'user_id,categoria,periodo' })
-              .select('categoria,monto_limite,seguimiento_diario');
+              .select('categoria,monto_limite');
             if (active && created) setPresupuestos(created as Presupuesto[]);
           } else {
             setPresupuestos([]);
           }
         } else {
-          if (budRes.data) setPresupuestos(budRes.data as Presupuesto[]);
+          setPresupuestos(budData as Presupuesto[]);
         }
 
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const gpc: Record<string,number> = {};
-        const ghoy: Record<string,number> = {};
+        const gpc: Record<string, number> = {};
         (txRes.data ?? []).filter(t => t.tipo === 'gasto').forEach(t => {
           const m   = Number(t.monto);
           const mon = (t as any).moneda ?? 'PEN';
           const tc  = (t as any).tipo_cambio ?? 1;
           const pen = mon === 'USD' ? m * tc : m;
           gpc[t.categoria] = (gpc[t.categoria] ?? 0) + pen;
-          if (t.creado_en.slice(0, 10) === todayStr) {
-            ghoy[t.categoria] = (ghoy[t.categoria] ?? 0) + pen;
-          }
         });
         setGastosPorCat(gpc);
-        setGastosHoy(ghoy);
         setLoading(false);
       })();
       return () => { active = false; };
     }, [])
   );
 
-  const { rate } = useExchangeRate();
+  // ── Derived ───────────────────────────────────────────────────────────────
 
-  const currency   = profile?.moneda_base ?? 'PEN';
-  const now        = new Date();
+  const currency = profile?.moneda_base ?? 'PEN';
+  const now      = new Date();
+  const initial  = profile?.nombre?.charAt(0).toUpperCase() ?? '?';
 
-  // Convertir todos los montos a PEN para el balance consolidado del Dashboard.
-  // Si una tx tiene moneda='USD', multiplicamos por tipo_cambio guardado;
-  // si falta el campo (filas antiguas), usamos la tasa venta del día.
   function toPENAmount(tx: Transaccion): number {
     const m   = Number(tx.monto);
     const mon = tx.moneda ?? 'PEN';
     if (mon === 'PEN') return m;
-    const tc  = tx.tipo_cambio ?? rate.venta;
-    return m * tc;
+    return m * (tx.tipo_cambio ?? rate.venta);
   }
 
-  const income   = txs.filter(t => t.tipo === 'ingreso').reduce((s,t) => s + toPENAmount(t), 0);
-  const expenses = txs.filter(t => t.tipo === 'gasto').reduce((s,t)  => s + toPENAmount(t), 0);
-  const balance  = income - expenses;
-  const recent     = txs.slice(0, 5);
+  const income         = txs.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + toPENAmount(t), 0);
+  // Separate regular expenses from one-time (únicos) for accurate run-rate
+  const expensesRec    = txs.filter(t => t.tipo === 'gasto' && !t.es_gasto_unico).reduce((s, t) => s + toPENAmount(t), 0);
+  const expensesUnicos = txs.filter(t => t.tipo === 'gasto' &&  t.es_gasto_unico).reduce((s, t) => s + toPENAmount(t), 0);
+  const expenses       = expensesRec + expensesUnicos;
+  const balance        = income - expenses;
 
-  // Sparklines: últimos 7 días
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - (6 - i));
-    return d.toISOString().slice(0, 10);
-  });
-  const sparkIn  = last7.map(day => txs.filter(t => t.tipo === 'ingreso' && t.creado_en.slice(0,10) === day).reduce((s,t) => s + toPENAmount(t), 0));
-  const sparkOut = last7.map(day => txs.filter(t => t.tipo === 'gasto'   && t.creado_en.slice(0,10) === day).reduce((s,t) => s + toPENAmount(t), 0));
+  const daysInMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysElapsed  = now.getDate();
+  const totalPres    = presupuestos.reduce((s, p) => s + p.monto_limite, 0);
+  // Run-rate: project regular expenses only; únicos are already paid, not repeated
+  const runRate      = daysElapsed > 0 ? (expensesRec / daysElapsed) * daysInMonth : 0;
+  const proyectado   = runRate + expensesUnicos;
+  const presProgress = totalPres > 0 ? Math.min(expenses / totalPres, 1) : 0;
+  const proyColor    = totalPres > 0 && proyectado > totalPres      ? C.red
+                     : totalPres > 0 && proyectado > totalPres * 0.85 ? C.amber
+                     : C.green;
 
-  const periodoDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  // Status
+  let statusColor = C.accent;
+  let statusTitle = 'Sin presupuesto definido';
+  let statusSub   = `Llevas ${fmt(expenses, currency)} gastados este mes`;
 
-  const handleCreateBudget = async () => {
-    if (!newBudCat) { setNewBudError('Selecciona una categoría.'); return; }
-    const monto = parseFloat(newBudMonto.replace(',','.'));
-    if (isNaN(monto) || monto <= 0) { setNewBudError('Ingresa un monto límite válido.'); return; }
-    setNewBudError('');
-    setNewBudSaving(true);
-    const { data:{ user } } = await supabase.auth.getUser();
-    if (!user) { setNewBudSaving(false); return; }
-    const { error } = await supabase.from('presupuestos').upsert({
-      user_id: user.id, categoria: newBudCat, monto_limite: monto,
-      seguimiento_diario: newBudSeguimiento, periodo: periodoDate,
-    }, { onConflict: 'user_id,categoria,periodo' });
-    if (error) { setNewBudError(error.message); setNewBudSaving(false); return; }
-    setPresupuestos(prev => {
-      const idx = prev.findIndex(p => p.categoria === newBudCat);
-      if (idx >= 0) return prev.map((p,i) => i === idx ? {...p, monto_limite: monto, seguimiento_diario: newBudSeguimiento} : p);
-      return [...prev, { categoria: newBudCat, monto_limite: monto, seguimiento_diario: newBudSeguimiento }];
-    });
-    setShowNewBudget(false);
-    setNewBudCat('');
-    setNewBudMonto('');
-    setNewBudSaving(false);
-  };
+  if (totalPres > 0) {
+    const pct = proyectado / totalPres;
+    if (pct < 0.85) {
+      statusColor = C.green;
+      statusTitle = '¡Vas por buen camino!';
+      statusSub   = `Día ${daysElapsed} de ${daysInMonth} · ${Math.round(presProgress * 100)}% del presupuesto`;
+    } else if (pct < 1.0) {
+      statusColor = C.amber;
+      statusTitle = 'Cuidado con el ritmo';
+      statusSub   = `Día ${daysElapsed} de ${daysInMonth} · ${Math.round(presProgress * 100)}% del presupuesto`;
+    } else {
+      statusColor = C.red;
+      statusTitle = 'Alerta de sobregasto';
+      statusSub   = `Día ${daysElapsed} de ${daysInMonth} · ${Math.round(presProgress * 100)}% del presupuesto`;
+    }
+  }
 
-  const initial = profile?.nombre?.charAt(0).toUpperCase() ?? '?';
+  // Hero number: run-rate if budget exists, else balance
+  const heroNumber = totalPres > 0 ? proyectado : balance;
+  const heroLabel  = totalPres > 0 ? 'PROYECCIÓN A FIN DE MES' : 'BALANCE DISPONIBLE';
+
+  // Top categories
+  const sortedCats  = Object.entries(gastosPorCat).sort(([, a], [, b]) => b - a);
+  const visibleCats = showAllCats ? sortedCats : sortedCats.slice(0, 3);
+  const recent      = txs.slice(0, 3);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FB" />
+    <View style={s.screen}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.screen} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* ── Header ── */}
-        <SafeAreaView style={{ backgroundColor: '#F8F9FB' }}>
-          <View style={styles.header}>
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+      >
+        {/* ── Top bar ── */}
+        <SafeAreaView style={{ backgroundColor: C.screen }}>
+          <View style={s.topBar}>
             <View>
-              <Text style={styles.greeting}>{loading ? '...' : `Hola, ${profile?.nombre ?? ''}! 👋`}</Text>
-              <Text style={styles.subGreeting}>{MONTHS[now.getMonth()]} {now.getFullYear()}</Text>
+              <Text style={s.greeting}>
+                {loading ? '' : `Hola, ${profile?.nombre ?? ''}`}
+              </Text>
+              <Text style={s.subGreeting}>
+                {MONTHS[now.getMonth()]} · {now.getFullYear()}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.avatar} onPress={() => router.push('/(tabs)/mas')}>
-              <Text style={styles.avatarText}>{initial}</Text>
+            <TouchableOpacity
+              style={s.avatar}
+              onPress={() => router.push('/(tabs)/mas')}
+              activeOpacity={0.7}
+            >
+              <Text style={s.avatarText}>{initial}</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
 
-        <View style={styles.container}>
+        <View style={s.container}>
 
-          {/* ── Balance Hero Card ── */}
-          <View style={styles.heroCard}>
-            <Text style={styles.heroLabel}>Balance disponible</Text>
-            {loading
-              ? <ActivityIndicator color="rgba(255,255,255,0.7)" style={{ marginVertical: 12 }} />
-              : <Text style={styles.heroBalance}>{fmt(balance, currency)}</Text>
-            }
-            <View style={styles.heroRow}>
-              <View style={styles.heroStat}>
-                <View style={styles.heroStatTop}>
-                  <View style={[styles.heroBadge, { backgroundColor: 'rgba(34,197,94,0.25)' }]}>
-                    <Text style={styles.heroBadgeText}>↑</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.heroStatLabel}>Ingresos</Text>
-                    <Text style={[styles.heroStatAmt, { color: '#86EFAC' }]}>
-                      {loading ? '—' : fmt(income, currency)}
-                    </Text>
-                  </View>
-                </View>
-                {!loading && <Sparkline values={sparkIn} color="#86EFAC" />}
+          {/* ════ ZONA 1 — HÉROE ════ */}
+          <View style={s.hero}>
+            <Text style={s.heroRunLabel}>{heroLabel}</Text>
+
+            {loading ? (
+              <ActivityIndicator color={C.textMuted} style={{ marginVertical: 18 }} />
+            ) : (
+              <Text
+                style={[s.heroRunAmt, { color: totalPres > 0 ? C.textHero : (balance >= 0 ? C.green : C.red) }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+              >
+                {fmt(heroNumber, currency)}
+              </Text>
+            )}
+
+            <View style={s.heroDivider} />
+
+            <View style={s.heroStatusRow}>
+              <View style={[s.heroDot, { backgroundColor: statusColor }]} />
+              <Text style={s.heroStatusText}>{statusTitle}</Text>
+            </View>
+            <Text style={s.heroStatusSub}>{statusSub}</Text>
+
+            {totalPres > 0 && (
+              <View style={s.heroBarBg}>
+                <View style={[s.heroBarFill, {
+                  width: `${Math.round(presProgress * 100)}%` as any,
+                  backgroundColor: statusColor,
+                }]} />
               </View>
-              <View style={styles.heroDiv} />
-              <View style={styles.heroStat}>
-                <View style={styles.heroStatTop}>
-                  <View style={[styles.heroBadge, { backgroundColor: 'rgba(239,68,68,0.25)' }]}>
-                    <Text style={styles.heroBadgeText}>↓</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.heroStatLabel}>Gastos</Text>
-                    <Text style={[styles.heroStatAmt, { color: '#FCA5A5' }]}>
-                      {loading ? '—' : fmt(expenses, currency)}
-                    </Text>
-                  </View>
+            )}
+          </View>
+
+          {/* ════ ZONA 2 — BENTO: Real + Presupuestado (2 cols) ════ */}
+          <View style={s.bentoRow}>
+            <View style={s.bentoCard}>
+              <Text style={s.bentoLabel}>REAL</Text>
+              <Text style={s.bentoAmt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
+                {loading ? '—' : fmt(expenses, currency)}
+              </Text>
+              <Text style={s.bentoSub}>gastado</Text>
+            </View>
+            <View style={[s.bentoCard, { marginLeft: 8 }]}>
+              <Text style={s.bentoLabel}>PRESUPUESTADO</Text>
+              <Text style={s.bentoAmt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
+                {loading ? '—' : totalPres > 0 ? fmt(totalPres, currency) : '—'}
+              </Text>
+              <Text style={s.bentoSub}>límite</Text>
+            </View>
+          </View>
+
+          {/* ── Proyectado: full-width featured card con desglose ── */}
+          <TouchableOpacity
+            style={[s.bentoCard, s.proyCard]}
+            onPress={() => setShowProyectadoInfo(v => !v)}
+            activeOpacity={0.85}
+          >
+            <View style={s.proyHeader}>
+              <Text style={s.bentoLabel}>PROYECTADO A FIN DE MES</Text>
+              <Text style={s.proyToggle}>{showProyectadoInfo ? '▲ Ocultar' : '▼ Ver cálculo'}</Text>
+            </View>
+            <Text
+              style={[s.proyAmt, { color: loading ? C.textPrimary : proyColor }]}
+              numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
+            >
+              {loading ? '—' : fmt(proyectado, currency)}
+            </Text>
+
+            {showProyectadoInfo && !loading && (
+              <View style={s.proyDetail}>
+                <View style={s.proyDetailRow}>
+                  <Text style={s.proyDetailLabel}>Gastos regulares (hoy)</Text>
+                  <Text style={s.proyDetailVal}>{fmt(expensesRec, currency)}</Text>
                 </View>
-                {!loading && <Sparkline values={sparkOut} color="#FCA5A5" />}
+                <View style={s.proyDetailRow}>
+                  <Text style={s.proyDetailLabel}>÷ Días transcurridos</Text>
+                  <Text style={s.proyDetailVal}>día {daysElapsed} de {daysInMonth}</Text>
+                </View>
+                <View style={s.proyDetailRow}>
+                  <Text style={s.proyDetailLabel}>× Días del mes</Text>
+                  <Text style={s.proyDetailVal}>{daysInMonth} días</Text>
+                </View>
+                <View style={s.proyDetailRow}>
+                  <Text style={s.proyDetailLabel}>= Run-rate</Text>
+                  <Text style={s.proyDetailVal}>{fmt(runRate, currency)}</Text>
+                </View>
+                {expensesUnicos > 0 && (
+                  <View style={s.proyDetailRow}>
+                    <Text style={s.proyDetailLabel}>+ Gastos únicos ⚡</Text>
+                    <Text style={s.proyDetailVal}>{fmt(expensesUnicos, currency)}</Text>
+                  </View>
+                )}
+                <View style={s.proyDetailSep} />
+                <View style={s.proyDetailRow}>
+                  <Text style={[s.proyDetailLabel, { fontWeight: '700', color: C.textPrimary }]}>= Proyectado total</Text>
+                  <Text style={[s.proyDetailVal, { fontWeight: '700', color: proyColor }]}>{fmt(proyectado, currency)}</Text>
+                </View>
+                {totalPres > 0 && (
+                  <Text style={s.proyDetailNote}>
+                    Representa el {Math.round((proyectado / totalPres) * 100)}% del presupuesto ({fmt(totalPres, currency)})
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {!showProyectadoInfo && totalPres > 0 && (
+              <View style={[s.thinBarBg, { marginTop: 12 }]}>
+                <View style={[s.thinBarFill, {
+                  width: `${Math.min(Math.round((proyectado / totalPres) * 100), 100)}%` as any,
+                  backgroundColor: proyColor,
+                }]} />
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* ── Balance card ── */}
+          <View style={s.balanceCard}>
+            <Text style={s.balanceTopLabel}>BALANCE DISPONIBLE</Text>
+            {loading ? (
+              <ActivityIndicator color={C.textSec} style={{ marginVertical: 8 }} />
+            ) : (
+              <Text style={[s.balanceAmt, { color: balance >= 0 ? C.green : C.red }]}>
+                {fmt(balance, currency)}
+              </Text>
+            )}
+            <View style={s.balanceInOut}>
+              <View style={s.balanceCol}>
+                <Text style={s.balanceColLabel}>↑ Ingresos</Text>
+                <Text style={[s.balanceColAmt, { color: C.green }]}>
+                  {loading ? '—' : fmt(income, currency)}
+                </Text>
+              </View>
+              <View style={s.balanceSep} />
+              <View style={s.balanceCol}>
+                <Text style={s.balanceColLabel}>↓ Gastos</Text>
+                <Text style={[s.balanceColAmt, { color: C.red }]}>
+                  {loading ? '—' : fmt(expenses, currency)}
+                </Text>
               </View>
             </View>
           </View>
 
-          {/* ── Acciones rápidas (scroll horizontal) ── */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-            {[
-              { icon:'＋', label:'Ingreso',   bg:'#D1FAE5', fg:'#059669', show: true,                              fn:() => router.push(`/registrar?tipo=ingreso&moneda=${currency}`) },
-              { icon:'－', label:'Gasto',     bg:'#FEE2E2', fg:'#DC2626', show: true,                              fn:() => router.push(`/registrar?tipo=gasto&moneda=${currency}`) },
-              { icon:'💳', label:'Pagar',     bg:'#FEF3C7', fg:'#92400E', show: !!(profile?.modulo_prestamos || profile?.modulo_tarjetas), fn:() => router.push(`/pagos?moneda=${currency}`) },
-              { icon:'🏦', label:'Ahorros',   bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,         fn:() => router.push(`/ahorros?moneda=${currency}`) },
-              { icon:'📋', label:'Préstamos', bg:'#EDE9FE', fg:'#5B21B6', show: !!profile?.modulo_prestamos,       fn:() => router.push(`/prestamos?moneda=${currency}`) },
-            ].filter(a => a.show).map(a => (
-              <TouchableOpacity key={a.label} style={[styles.chip, { backgroundColor: a.bg }]} onPress={a.fn} activeOpacity={0.75}>
-                <Text style={styles.chipIcon}>{a.icon}</Text>
-                <Text style={[styles.chipLabel, { color: a.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{a.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {/* ════ ZONA 3a — TOP CATEGORÍAS ════ */}
+          {!loading && sortedCats.length > 0 && (
+            <View style={s.section}>
+              <View style={s.sectionHead}>
+                <Text style={s.sectionTitle}>Top categorías</Text>
+                {sortedCats.length > 3 && (
+                  <TouchableOpacity onPress={() => setShowAllCats(v => !v)} activeOpacity={0.7}>
+                    <Text style={s.sectionLink}>
+                      {showAllCats ? 'Ver menos' : `Ver más (${sortedCats.length - 3})`} ▸
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
 
-          {/* ── Widget: Cuota diaria ── */}
-          {!loading && presupuestos.some(p => p.seguimiento_diario) && (() => {
-            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-            const items = presupuestos.filter(p => p.seguimiento_diario).map(p => {
-              const cuota     = p.monto_limite / daysInMonth;
-              const gastado   = gastosHoy[p.categoria] ?? 0;
-              const remaining = Math.max(cuota - gastado, 0);
-              const pct       = cuota > 0 ? Math.min(gastado / cuota, 1) : 0;
-              return { ...p, cuota, gastado, remaining, pct };
-            });
-            return (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>⏱ Disponible hoy</Text>
-                <Text style={[styles.budgetGastado, { marginBottom: 10, marginTop: 2 }]}>
-                  Cuota diaria = presupuesto ÷ {daysInMonth} días del mes
-                </Text>
-                {items.map(item => {
-                  const color = budgetColor(item.pct);
+              <View style={s.catCard}>
+                {visibleCats.map(([cat, gasto], i) => {
+                  const pres  = presupuestos.find(p => p.categoria === cat);
+                  const limit = pres?.monto_limite ?? 0;
+                  const pct   = limit > 0 ? Math.min(gasto / limit, 1) : 0;
+                  const barColor = limit > 0
+                    ? (pct >= 0.9 ? C.red : pct >= 0.7 ? C.amber : C.green)
+                    : C.textMicro;
                   return (
-                    <View key={item.categoria} style={[styles.budgetItem, { borderLeftWidth: 3, borderLeftColor: color }]}>
-                      <View style={styles.budgetItemTop}>
-                        <Text style={styles.budgetCat}>{ICON[item.categoria] ?? '📦'} {item.categoria}</Text>
-                        <Text style={[styles.budgetPct, { color }]}>
-                          {SYM[currency] ?? currency} {item.remaining.toFixed(2)} hoy
-                        </Text>
-                      </View>
-                      <View style={styles.barBg}>
-                        <View style={[styles.barFill, { width: `${Math.round(item.pct * 100)}%` as any, backgroundColor: color }]} />
-                      </View>
-                      <View style={styles.budgetItemBot}>
-                        <Text style={styles.budgetGastado}>{fmt(item.gastado, currency)} gastado hoy</Text>
-                        <Text style={styles.budgetLimite}>cuota {fmt(item.cuota, currency)}</Text>
-                      </View>
+                    <View key={cat}>
+                      <TouchableOpacity
+                        style={s.catRow}
+                        activeOpacity={0.65}
+                        onPress={() => router.push(`/categoria-detalle?categoria=${encodeURIComponent(cat)}&presupuesto=${limit}&moneda=${currency}`)}
+                      >
+                        <Text style={s.catIcon}>{ICON[cat] ?? '📦'}</Text>
+                        <View style={s.catBody}>
+                          <View style={s.catTop}>
+                            <Text style={s.catName}>{cat}</Text>
+                            <Text style={[s.catAmt, { color: barColor }]}>{fmt(gasto, currency)}</Text>
+                          </View>
+                          <View style={s.thinBarBg}>
+                            <View style={[s.thinBarFill, {
+                              width: limit > 0 ? (`${Math.round(pct * 100)}%` as any) : '0%',
+                              backgroundColor: barColor,
+                            }]} />
+                          </View>
+                          {limit > 0 && (
+                            <Text style={s.catLimit}>
+                              {Math.round(pct * 100)}% de {fmt(limit, currency)}
+                            </Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                      {i < visibleCats.length - 1 && <View style={s.catSep} />}
                     </View>
                   );
                 })}
               </View>
-            );
-          })()}
+            </View>
+          )}
 
-          {/* ── Presupuestos del mes ── */}
-          <View style={styles.section}>
-            <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>📊 Presupuestos</Text>
-              <TouchableOpacity onPress={() => { setNewBudCat(''); setNewBudMonto(''); setNewBudSeguimiento(false); setNewBudError(''); setShowNewBudget(true); }}>
-                <Text style={styles.sectionLink}>＋ Agregar</Text>
+          {/* ════ ZONA 3b — ÚLTIMOS 3 MOVIMIENTOS ════ */}
+          <View style={s.section}>
+            <View style={s.sectionHead}>
+              <Text style={s.sectionTitle}>Últimos movimientos</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/transacciones')} activeOpacity={0.7}>
+                <Text style={s.sectionLink}>Ver todo →</Text>
               </TouchableOpacity>
             </View>
-            {!loading && presupuestos.length === 0 && (
-              <View style={styles.emptyBudget}>
-                <Text style={styles.emptyBudgetText}>
-                  Sin presupuestos este mes.{' '}
-                  <Text style={{ color: '#7C3AED' }}>Toca "＋ Agregar" para definir límites.</Text>
-                </Text>
-              </View>
-            )}
-            {presupuestos.map(p => {
-              const gastado = gastosPorCat[p.categoria] ?? 0;
-              const pct     = p.monto_limite > 0 ? Math.min(gastado / p.monto_limite, 1) : 0;
-              const color   = budgetColor(pct);
-              const pctInt  = Math.round(pct * 100);
-              return (
-                <TouchableOpacity key={p.categoria} style={styles.budgetItem} activeOpacity={0.75}
-                  onPress={() => router.push(`/categoria-detalle?categoria=${encodeURIComponent(p.categoria)}&presupuesto=${p.monto_limite}&moneda=${currency}`)}>
-                  <View style={styles.budgetItemTop}>
-                    <Text style={styles.budgetCat}>{ICON[p.categoria] ?? '📦'} {p.categoria}{p.seguimiento_diario ? ' ⏱' : ''}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[styles.budgetPct, { color }]}>{pctInt}%</Text>
-                      <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        onPress={() => { setNewBudCat(p.categoria); setNewBudMonto(String(p.monto_limite)); setNewBudSeguimiento(p.seguimiento_diario ?? false); setNewBudError(''); setShowNewBudget(true); }}>
-                        <Text style={{ color: '#9CA3AF', fontSize: 14 }}>✎</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <View style={styles.barBg}>
-                    <View style={[styles.barFill, { width: `${pctInt}%` as any, backgroundColor: color }]} />
-                  </View>
-                  <View style={styles.budgetItemBot}>
-                    <Text style={styles.budgetGastado}>{fmt(gastado, currency)} gastado</Text>
-                    <Text style={styles.budgetLimite}>de {fmt(p.monto_limite, currency)}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
 
-          {/* ── Últimos movimientos ── */}
-          <View style={styles.section}>
-            <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>Últimos movimientos</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/transacciones')}>
-                <Text style={styles.sectionLink}>Ver todo</Text>
-              </TouchableOpacity>
-            </View>
             {loading ? (
-              <ActivityIndicator color="#3B82F6" style={{ marginVertical: 24 }} />
+              <ActivityIndicator color={C.textMicro} style={{ marginVertical: 20 }} />
             ) : recent.length === 0 ? (
-              <View style={styles.emptyTx}>
-                <Text style={{ fontSize: 34, marginBottom: 10 }}>💸</Text>
-                <Text style={styles.emptyTxTitle}>Sin movimientos este mes</Text>
-                <Text style={styles.emptyTxSub}>Usa los botones de arriba o el botón verde para registrar.</Text>
+              <View style={s.emptyTx}>
+                <Text style={s.emptyTxIcon}>💸</Text>
+                <Text style={s.emptyTxTitle}>Sin movimientos este mes</Text>
+                <Text style={s.emptyTxSub}>Usa el botón para registrar el primero.</Text>
               </View>
             ) : (
-              <View style={styles.txCard}>
+              <View style={s.txCard}>
                 {recent.map((tx, i) => (
                   <View key={tx.id}>
-                    <View style={styles.txRow}>
-                      <View style={styles.txIconBox}>
-                        <Text style={{ fontSize: 18 }}>{ICON[tx.categoria] ?? '📦'}</Text>
+                    <View style={s.txRow}>
+                      <View style={s.txIconBox}>
+                        <Text style={{ fontSize: 16 }}>{ICON[tx.categoria] ?? '📦'}</Text>
                       </View>
-                      <View style={styles.txBody}>
-                        <Text style={styles.txDesc} numberOfLines={1}>{tx.descripcion || tx.categoria}</Text>
-                        <Text style={styles.txMeta}>
-                          {tx.categoria} · {new Date(tx.creado_en).toLocaleDateString('es-PE',{day:'2-digit',month:'short'})}
+                      <View style={s.txBody}>
+                        <Text style={s.txDesc} numberOfLines={1}>
+                          {tx.descripcion || tx.categoria}
+                        </Text>
+                        <Text style={s.txMeta}>
+                          {tx.categoria} · {new Date(tx.creado_en).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}
                         </Text>
                       </View>
-                      <Text style={[styles.txAmt, tx.tipo === 'ingreso' ? styles.green : styles.red]}>
+                      <Text style={[s.txAmt, { color: tx.tipo === 'ingreso' ? C.green : C.red }]}>
                         {tx.tipo === 'ingreso' ? '+' : '−'}{fmt(Number(tx.monto), currency)}
                       </Text>
                     </View>
-                    {i < recent.length - 1 && <View style={styles.txSep} />}
+                    {i < recent.length - 1 && <View style={s.txSep} />}
                   </View>
                 ))}
               </View>
             )}
           </View>
 
-          <View style={{ height: 100 }} />
+          <View style={{ height: 110 }} />
         </View>
       </ScrollView>
 
-      {/* ── FAB Quick Add ── */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowQuickAdd(true)} activeOpacity={0.85}>
-        <Text style={styles.fabText}>＋ Quick Add</Text>
+      {/* ── FAB — único punto de registro ── */}
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => setShowQuickAdd(true)}
+        activeOpacity={0.75}
+      >
+        <Text style={s.fabText}>＋  Quick Add</Text>
       </TouchableOpacity>
 
-      {/* ── Quick Add Bottom Sheet ── */}
+      {/* ── Quick Add bottom sheet ── */}
       <Modal visible={showQuickAdd} animationType="slide" transparent>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowQuickAdd(false)}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetPill} />
-            <Text style={styles.sheetTitle}>¿Qué quieres registrar?</Text>
-            <View style={styles.sheetDiv} />
-            {[
-              { icon:'＋', label:'Registrar Ingreso',    sub:'Sueldo, freelance, transferencias',  bg:'#D1FAE5', fg:'#059669', show: true,
-                fn: () => { setShowQuickAdd(false); router.push(`/registrar?tipo=ingreso&moneda=${currency}`); } },
-              { icon:'－', label:'Registrar Gasto',      sub:'Alimentación, transporte, servicios', bg:'#FEE2E2', fg:'#DC2626', show: true,
-                fn: () => { setShowQuickAdd(false); router.push(`/registrar?tipo=gasto&moneda=${currency}`); } },
-              { icon:'💳', label:'Pagar deuda',          sub:'Tarjeta de crédito o préstamo',      bg:'#FEF3C7', fg:'#92400E', show: !!profile?.modulo_prestamos,
-                fn: () => { setShowQuickAdd(false); router.push(`/pagos?moneda=${currency}`); } },
-              { icon:'🏦', label:'Movimiento de ahorro', sub:'Abono, retiro o interés',            bg:'#E0F2FE', fg:'#0369A1', show: !!profile?.modulo_ahorros,
-                fn: () => { setShowQuickAdd(false); router.push(`/ahorros?moneda=${currency}`); } },
-            ].filter(opt => opt.show).map((opt, i, arr) => (
+        <TouchableOpacity
+          style={s.backdrop}
+          activeOpacity={1}
+          onPress={() => setShowQuickAdd(false)}
+        >
+          <View style={s.sheet}>
+            <View style={s.sheetPill} />
+            <Text style={s.sheetTitle}>¿Qué quieres registrar?</Text>
+            <View style={s.sheetDivider} />
+            {([
+              {
+                icon: '＋', label: 'Registrar Ingreso',    sub: 'Sueldo, freelance, transferencias',
+                bg: '#F0FDF4', fg: '#15803D', show: true,
+                fn: () => { setShowQuickAdd(false); router.push(`/registrar?tipo=ingreso&moneda=${currency}`); },
+              },
+              {
+                icon: '－', label: 'Registrar Gasto',      sub: 'Alimentación, transporte, servicios',
+                bg: '#FFF1F2', fg: '#BE123C', show: true,
+                fn: () => { setShowQuickAdd(false); router.push(`/registrar?tipo=gasto&moneda=${currency}`); },
+              },
+              {
+                icon: '💳', label: 'Pagar deuda',          sub: 'Tarjeta de crédito o préstamo',
+                bg: '#FFFBEB', fg: '#92400E', show: !!(profile?.modulo_prestamos || profile?.modulo_tarjetas),
+                fn: () => { setShowQuickAdd(false); router.push(`/pagos?moneda=${currency}`); },
+              },
+              {
+                icon: '🏦', label: 'Movimiento de ahorro', sub: 'Abono, retiro o interés',
+                bg: '#EFF6FF', fg: '#1D4ED8', show: !!profile?.modulo_ahorros,
+                fn: () => { setShowQuickAdd(false); router.push(`/ahorros?moneda=${currency}`); },
+              },
+            ] as const).filter(o => o.show).map((opt, i, arr) => (
               <View key={opt.label}>
-                <TouchableOpacity style={styles.sheetOpt} onPress={opt.fn}>
-                  <View style={[styles.sheetOptIcon, { backgroundColor: opt.bg }]}>
+                <TouchableOpacity style={s.sheetOpt} onPress={opt.fn} activeOpacity={0.7}>
+                  <View style={[s.sheetOptIcon, { backgroundColor: opt.bg }]}>
                     <Text style={{ fontSize: 22 }}>{opt.icon}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.sheetOptTitle, { color: opt.fg }]}>{opt.label}</Text>
-                    <Text style={styles.sheetOptSub}>{opt.sub}</Text>
+                    <Text style={[s.sheetOptTitle, { color: opt.fg }]}>{opt.label}</Text>
+                    <Text style={s.sheetOptSub}>{opt.sub}</Text>
                   </View>
-                  <Text style={styles.chevron}>›</Text>
+                  <Text style={s.chevron}>›</Text>
                 </TouchableOpacity>
-                {i < arr.length - 1 && <View style={styles.sheetSep} />}
+                {i < arr.length - 1 && <View style={s.sheetSep} />}
               </View>
             ))}
-            <TouchableOpacity style={styles.sheetCancel} onPress={() => setShowQuickAdd(false)}>
-              <Text style={styles.sheetCancelText}>Cancelar</Text>
+            <TouchableOpacity style={s.sheetCancel} onPress={() => setShowQuickAdd(false)} activeOpacity={0.7}>
+              <Text style={s.sheetCancelText}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-      </Modal>
-
-      {/* ── Nuevo Presupuesto Modal ── */}
-      <Modal visible={showNewBudget} animationType="slide" transparent>
-        <View style={styles.formBackdrop}>
-          <View style={styles.formSheet}>
-            <View style={styles.formHead}>
-              <Text style={styles.formTitle}>📊 {presupuestos.find(p=>p.categoria===newBudCat) ? 'Editar' : 'Nuevo'} Presupuesto</Text>
-              <TouchableOpacity onPress={() => setShowNewBudget(false)}>
-                <Text style={styles.formClose}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.formBody}>
-              <Text style={styles.formLabel}>Categoría *</Text>
-              <TouchableOpacity style={styles.formInput} onPress={() => setShowBudPicker(true)}>
-                <Text style={newBudCat ? styles.formValText : styles.formPlaceholder}>
-                  {newBudCat ? `${ICON[newBudCat] ?? '📦'} ${newBudCat}` : 'Selecciona una categoría'}
-                </Text>
-              </TouchableOpacity>
-              <Text style={styles.formLabel}>Límite mensual ({SYM[currency] ?? currency}) *</Text>
-              <TextInput
-                style={[styles.formInput, styles.formValText]}
-                placeholder="0.00" placeholderTextColor="#9CA3AF"
-                keyboardType="decimal-pad" value={newBudMonto} onChangeText={setNewBudMonto}
-              />
-              <View style={styles.switchRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.formLabel}>Seguimiento diario ⏱</Text>
-                  <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
-                    Muestra cuánto puedes gastar hoy
-                  </Text>
-                </View>
-                <Switch value={newBudSeguimiento} onValueChange={setNewBudSeguimiento}
-                  trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
-                  thumbColor={newBudSeguimiento ? '#3B82F6' : '#9CA3AF'} />
-              </View>
-              {!!newBudError && <Text style={styles.formError}>{newBudError}</Text>}
-              <TouchableOpacity
-                style={[styles.formSaveBtn, newBudSaving && { opacity: 0.6 }]}
-                onPress={handleCreateBudget} disabled={newBudSaving}
-              >
-                {newBudSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.formSaveText}>Guardar presupuesto</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Categoría Picker ── */}
-      <Modal visible={showBudPicker} animationType="slide" transparent>
-        <View style={styles.formBackdrop}>
-          <View style={[styles.formSheet, { maxHeight: '60%' }]}>
-            <View style={styles.formHead}>
-              <Text style={styles.formTitle}>Categoría</Text>
-              <TouchableOpacity onPress={() => setShowBudPicker(false)}>
-                <Text style={styles.formClose}>Cerrar</Text>
-              </TouchableOpacity>
-            </View>
-            {CATS_GASTO.map((cat, i) => (
-              <View key={cat}>
-                <TouchableOpacity style={styles.catOpt} onPress={() => { setNewBudCat(cat); setShowBudPicker(false); }}>
-                  <Text style={styles.catOptText}>{ICON[cat] ?? '📦'} {cat}</Text>
-                  {newBudCat === cat && <Text style={{ color: '#7C3AED', fontSize: 18 }}>✓</Text>}
-                </TouchableOpacity>
-                {i < CATS_GASTO.length - 1 && <View style={styles.sheetSep} />}
-              </View>
-            ))}
-          </View>
-        </View>
       </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll:       { flexGrow: 1 },
-  header:       { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
-                  paddingHorizontal:20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom: 8 },
-  greeting:     { fontSize:17, fontWeight:'700', color:'#111827' },
-  subGreeting:  { fontSize:12, color:'#9CA3AF', marginTop:1, textTransform:'capitalize' },
-  avatar:       { width:40, height:40, borderRadius:20, backgroundColor:'#3B82F6',
-                  justifyContent:'center', alignItems:'center' },
-  avatarText:   { color:'#fff', fontSize:17, fontWeight:'700' },
+// ── Styles ────────────────────────────────────────────────────────────────────
 
-  container: { paddingHorizontal: 16, paddingTop: 8 },
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: C.screen },
+  scroll: { flexGrow: 1 },
+  container: { paddingHorizontal: 16, paddingTop: 6 },
 
-  heroCard: {
-    backgroundColor: '#0F172A', borderRadius: 24, padding: 24, marginBottom: 16,
-    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3, shadowRadius: 20, elevation: 10,
+  // ── Top bar
+  topBar:     {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 14, paddingBottom: 12,
   },
-  heroLabel:    { fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1 },
-  heroBalance:  { fontSize: 38, fontWeight: '800', color: '#fff', marginTop: 6, marginBottom: 20, letterSpacing: -1 },
-  heroRow:      { flexDirection: 'row' },
-  heroStat:     { flex: 1 },
-  heroStatTop:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  heroBadge:    { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  heroBadgeText:{ fontSize: 14, fontWeight: '700', color: '#fff' },
-  heroStatLabel:{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 },
-  heroStatAmt:  { fontSize: 13, fontWeight: '700' },
-  heroDiv:      { width: 1, height: 44, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: 16, marginTop: 2 },
+  greeting:   { fontSize: 18, fontWeight: '700', color: C.textPrimary, letterSpacing: -0.2 },
+  subGreeting:{ fontSize: 12, color: C.textMicro, marginTop: 2, textTransform: 'capitalize', letterSpacing: 0.2 },
+  avatar:     {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: C.hero, justifyContent: 'center', alignItems: 'center',
+  },
+  avatarText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  chip:      { alignItems:'center', paddingHorizontal:14, paddingVertical:12, borderRadius:16, minWidth:68, maxWidth:90, gap:4 },
-  chipIcon:  { fontSize: 20 },
-  chipLabel: { fontSize: 11, fontWeight: '600', textAlign:'center' },
+  // ── ZONA 1: Hero
+  hero: {
+    backgroundColor: C.hero,
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 10,
+  },
+  heroRunLabel: {
+    fontSize: 10, fontWeight: '600', color: C.textLabel,
+    textTransform: 'uppercase', letterSpacing: 2.5, marginBottom: 10,
+  },
+  heroRunAmt: {
+    fontSize: 52, fontWeight: '800', color: C.textHero,
+    letterSpacing: -2, marginBottom: 20,
+  },
+  heroDivider: {
+    height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 16,
+  },
+  heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  heroDot:       { width: 8, height: 8, borderRadius: 4 },
+  heroStatusText:{ fontSize: 17, fontWeight: '700', color: C.textHero, letterSpacing: -0.2 },
+  heroStatusSub: { fontSize: 12, color: C.textMuted, marginBottom: 14, letterSpacing: 0.1 },
+  heroBarBg:     {
+    height: 2, backgroundColor: 'rgba(255,255,255,0.10)',
+    borderRadius: 1, overflow: 'hidden',
+  },
+  heroBarFill:   { height: '100%' as any, borderRadius: 1 },
 
-  section:      { marginBottom: 20 },
-  sectionHead:  { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  sectionLink:  { fontSize: 13, color: '#3B82F6', fontWeight: '500' },
+  // ── ZONA 2: Bento
+  bentoRow:  { flexDirection: 'row', marginBottom: 10 },
+  bentoCard: {
+    flex: 1, backgroundColor: C.card, borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: C.border,
+  },
+  bentoLabel: {
+    fontSize: 9, fontWeight: '600', color: C.textMicro,
+    textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8,
+  },
+  bentoAmt: {
+    fontSize: 18, fontWeight: '700', color: C.textPrimary,
+    letterSpacing: -0.4, marginBottom: 4,
+  },
+  bentoSub: { fontSize: 10, color: C.textMicro },
 
-  emptyBudget:     { backgroundColor:'#fff', borderRadius:14, padding:14,
-                     borderLeftWidth:3, borderLeftColor:'#7C3AED' },
-  emptyBudgetText: { fontSize:13, color:'#6B7280', lineHeight:20 },
-  budgetItem:      { backgroundColor:'#fff', borderRadius:14, padding:14, marginBottom:8,
-                     shadowColor:'#000', shadowOpacity:0.04, shadowRadius:4, elevation:1 },
-  budgetItemTop:   { flexDirection:'row', justifyContent:'space-between', marginBottom:8 },
-  budgetCat:       { fontSize:14, fontWeight:'500', color:'#374151' },
-  budgetPct:       { fontSize:13, fontWeight:'700' },
-  barBg:           { height:8, backgroundColor:'#F3F4F6', borderRadius:4, overflow:'hidden', marginBottom:6 },
-  barFill:         { height:'100%', borderRadius:4 },
-  budgetItemBot:   { flexDirection:'row', justifyContent:'space-between' },
-  budgetGastado:   { fontSize:11, color:'#6B7280' },
-  budgetLimite:    { fontSize:11, color:'#9CA3AF' },
+  // ── Proyectado card
+  proyCard:       { flex: 0, marginBottom: 10 },
+  proyHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  proyToggle:     { fontSize: 11, color: C.accent, fontWeight: '500' },
+  proyAmt:        { fontSize: 26, fontWeight: '800', letterSpacing: -0.6 },
+  proyDetail:     { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
+  proyDetailRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
+  proyDetailLabel:{ fontSize: 12, color: C.textSec },
+  proyDetailVal:  { fontSize: 12, color: C.textPrimary, fontWeight: '600' },
+  proyDetailSep:  { height: 1, backgroundColor: C.border, marginVertical: 8 },
+  proyDetailNote: { fontSize: 11, color: C.textMicro, marginTop: 4 },
 
-  emptyTx:      { backgroundColor:'#fff', borderRadius:16, padding:28, alignItems:'center' },
-  emptyTxTitle: { fontSize:15, fontWeight:'600', color:'#374151', marginBottom:6 },
-  emptyTxSub:   { fontSize:13, color:'#9CA3AF', textAlign:'center', lineHeight:19 },
-  txCard:       { backgroundColor:'#fff', borderRadius:16, overflow:'hidden',
-                  shadowColor:'#000', shadowOpacity:0.04, shadowRadius:6, elevation:1 },
-  txRow:        { flexDirection:'row', alignItems:'center', paddingHorizontal:14, paddingVertical:12 },
-  txIconBox:    { width:40, height:40, borderRadius:12, backgroundColor:'#F3F4F6',
-                  justifyContent:'center', alignItems:'center', marginRight:10, flexShrink:0 },
-  txBody:       { flex:1, minWidth:0 },
-  txDesc:       { fontSize:14, fontWeight:'600', color:'#111827' },
-  txMeta:       { fontSize:11, color:'#9CA3AF', marginTop:1 },
-  txAmt:        { fontSize:14, fontWeight:'700', marginLeft:8, flexShrink:0 },
-  txSep:        { height:1, backgroundColor:'#F3F4F6', marginLeft:64 },
-  green:        { color:'#059669' },
-  red:          { color:'#DC2626' },
+  // ── Balance card
+  balanceCard: {
+    backgroundColor: C.card, borderRadius: 18, padding: 20,
+    marginBottom: 10, borderWidth: 1, borderColor: C.border,
+  },
+  balanceTopLabel: {
+    fontSize: 9, fontWeight: '600', color: C.textMicro,
+    textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8,
+  },
+  balanceAmt:     { fontSize: 30, fontWeight: '800', letterSpacing: -0.8, marginBottom: 16 },
+  balanceInOut:   { flexDirection: 'row' },
+  balanceCol:     { flex: 1 },
+  balanceSep:     { width: 1, backgroundColor: C.border, marginHorizontal: 16 },
+  balanceColLabel:{ fontSize: 11, color: C.textMicro, marginBottom: 4 },
+  balanceColAmt:  { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
 
+  // ── Sections
+  section:     { marginBottom: 10 },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  sectionTitle:{ fontSize: 14, fontWeight: '700', color: C.textPrimary, letterSpacing: -0.1 },
+  sectionLink: { fontSize: 12, color: C.accent, fontWeight: '500' },
+
+  // ── Category card
+  catCard:    {
+    backgroundColor: C.card, borderRadius: 18, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border,
+  },
+  catRow:     { paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center' },
+  catIcon:    { fontSize: 15, marginRight: 12, width: 22, textAlign: 'center' },
+  catBody:    { flex: 1 },
+  catTop:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  catName:    { fontSize: 14, fontWeight: '600', color: C.textPrimary },
+  catAmt:     { fontSize: 13, fontWeight: '700' },
+  catLimit:   { fontSize: 10, color: C.textMicro, marginTop: 4 },
+  catSep:     { height: 1, backgroundColor: C.border, marginLeft: 50 },
+  thinBarBg:  { height: 2, backgroundColor: '#F3F4F6', borderRadius: 1, overflow: 'hidden' },
+  thinBarFill:{ height: '100%' as any, borderRadius: 1 },
+
+  // ── Transaction card
+  txCard:    {
+    backgroundColor: C.card, borderRadius: 18, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border,
+  },
+  txRow:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
+  txIconBox: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: C.screen,
+    justifyContent: 'center', alignItems: 'center', marginRight: 12, flexShrink: 0,
+  },
+  txBody:    { flex: 1, minWidth: 0 },
+  txDesc:    { fontSize: 14, fontWeight: '500', color: C.textPrimary, marginBottom: 2 },
+  txMeta:    { fontSize: 11, color: C.textMicro },
+  txAmt:     { fontSize: 13, fontWeight: '700', marginLeft: 8, flexShrink: 0 },
+  txSep:     { height: 1, backgroundColor: C.border, marginLeft: 64 },
+  emptyTx:   { backgroundColor: C.card, borderRadius: 18, padding: 32, alignItems: 'center',
+               borderWidth: 1, borderColor: C.border },
+  emptyTxIcon: { fontSize: 32, marginBottom: 10 },
+  emptyTxTitle:{ fontSize: 14, fontWeight: '600', color: C.textPrimary, marginBottom: 4 },
+  emptyTxSub:  { fontSize: 12, color: C.textMicro, textAlign: 'center' },
+
+  // ── FAB
   fab: {
-    position:'absolute', bottom:24, right:20,
-    backgroundColor:'#22C55E', borderRadius:28,
-    paddingHorizontal:20, paddingVertical:14,
-    shadowColor:'#16A34A', shadowOffset:{ width:0, height:4 },
-    shadowOpacity:0.45, shadowRadius:10, elevation:8,
+    position: 'absolute', bottom: 28, right: 20,
+    backgroundColor: C.hero, borderRadius: 28,
+    paddingHorizontal: 22, paddingVertical: 15,
   },
-  fabText: { color:'#fff', fontSize:15, fontWeight:'700' },
+  fabText: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
 
-  backdrop:       { flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'flex-end' },
-  sheet:          { backgroundColor:'#fff', borderTopLeftRadius:28, borderTopRightRadius:28,
-                    paddingBottom: Platform.OS === 'ios' ? 36 : 20 },
-  sheetPill:      { width:40, height:4, backgroundColor:'#E5E7EB', borderRadius:2,
-                    alignSelf:'center', marginTop:10, marginBottom:16 },
-  sheetTitle:     { fontSize:16, fontWeight:'700', color:'#111827', paddingHorizontal:20, marginBottom:12 },
-  sheetDiv:       { height:1, backgroundColor:'#F3F4F6' },
-  sheetOpt:       { flexDirection:'row', alignItems:'center', paddingHorizontal:20, paddingVertical:14, gap:14 },
-  sheetOptIcon:   { width:48, height:48, borderRadius:14, justifyContent:'center', alignItems:'center' },
-  sheetOptTitle:  { fontSize:15, fontWeight:'600' },
-  sheetOptSub:    { fontSize:12, color:'#9CA3AF', marginTop:2 },
-  chevron:        { fontSize:22, color:'#D1D5DB' },
-  sheetSep:       { height:1, backgroundColor:'#F3F4F6', marginLeft:82 },
-  sheetCancel:    { margin:16, backgroundColor:'#F3F4F6', borderRadius:14,
-                    paddingVertical:14, alignItems:'center' },
-  sheetCancelText:{ fontSize:15, fontWeight:'600', color:'#374151' },
-
-  formBackdrop: { flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'flex-end', alignItems:'center' },
-  formSheet:    { backgroundColor:'#fff', borderTopLeftRadius:24, borderTopRightRadius:24,
-                  width:'100%', maxWidth:600, maxHeight:'80%' },
-  formHead:     { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
-                  paddingHorizontal:20, paddingVertical:16, borderBottomWidth:1, borderBottomColor:'#F3F4F6' },
-  formTitle:    { fontSize:16, fontWeight:'700', color:'#111827' },
-  formClose:    { fontSize:14, color:'#3B82F6', fontWeight:'500' },
-  formBody:     { padding:20, paddingBottom:36 },
-  formLabel:    { fontSize:13, fontWeight:'500', color:'#374151', marginBottom:6, marginTop:14 },
-  formInput:    { height:50, backgroundColor:'#F9FAFB', borderWidth:1, borderColor:'#E5E7EB',
-                  borderRadius:12, paddingHorizontal:14, justifyContent:'center' },
-  formValText:  { color:'#111827', fontSize:15 },
-  formPlaceholder:{ color:'#9CA3AF', fontSize:15 },
-  formError:    { color:'#DC2626', fontSize:13, marginTop:8, backgroundColor:'#FEF2F2', borderRadius:8, padding:10 },
-  formSaveBtn:  { height:50, backgroundColor:'#7C3AED', borderRadius:12,
-                  justifyContent:'center', alignItems:'center', marginTop:20 },
-  formSaveText: { color:'#fff', fontSize:15, fontWeight:'600' },
-  switchRow:    { flexDirection:'row', alignItems:'center', backgroundColor:'#F9FAFB',
-                  borderWidth:1, borderColor:'#E5E7EB', borderRadius:12,
-                  paddingHorizontal:14, paddingVertical:12, marginTop:14 },
-  catOpt:       { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
-                  paddingHorizontal:20, paddingVertical:14 },
-  catOptText:   { fontSize:15, color:'#111827' },
+  // ── Quick Add sheet
+  backdrop:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet:           {
+    backgroundColor: C.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 20,
+  },
+  sheetPill:       {
+    width: 36, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2,
+    alignSelf: 'center', marginTop: 10, marginBottom: 14,
+  },
+  sheetTitle:      { fontSize: 15, fontWeight: '700', color: C.textPrimary, paddingHorizontal: 22, marginBottom: 12 },
+  sheetDivider:    { height: 1, backgroundColor: C.border },
+  sheetOpt:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingVertical: 14, gap: 14 },
+  sheetOptIcon:    { width: 46, height: 46, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
+  sheetOptTitle:   { fontSize: 14, fontWeight: '600', marginBottom: 2 },
+  sheetOptSub:     { fontSize: 12, color: C.textMicro },
+  chevron:         { fontSize: 20, color: '#D1D5DB' },
+  sheetSep:        { height: 1, backgroundColor: C.border, marginLeft: 82 },
+  sheetCancel:     {
+    margin: 16, backgroundColor: C.screen, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center',
+  },
+  sheetCancelText: { fontSize: 14, fontWeight: '600', color: C.textSec },
 });
