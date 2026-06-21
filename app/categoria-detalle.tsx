@@ -11,7 +11,8 @@ interface Tx {
   monto: number;
   descripcion: string | null;
   creado_en: string;
-  moneda: string;
+  moneda: string | null;
+  tipo_cambio: number | null;
 }
 
 const SYM: Record<string, string> = {
@@ -55,7 +56,7 @@ export default function CategoriaDetalle() {
 
       const { data } = await supabase
         .from('transacciones')
-        .select('id,monto,descripcion,creado_en,moneda')
+        .select('id,monto,descripcion,creado_en,moneda,tipo_cambio')
         .eq('user_id', user.id)
         .eq('tipo', 'gasto')
         .eq('categoria', categoria)
@@ -68,7 +69,13 @@ export default function CategoriaDetalle() {
     })();
   }, [categoria]);
 
-  const total    = txs.reduce((s, t) => s + t.monto, 0);
+  // Convert each transaction to base currency before summing
+  const toPEN = (t: Tx) => {
+    const mon = t.moneda ?? 'PEN';
+    if (mon === 'PEN') return t.monto;
+    return t.monto * (t.tipo_cambio ?? 1);
+  };
+  const total = txs.reduce((s, t) => s + toPEN(t), 0);
   const pct      = limite > 0 ? Math.min(total / limite, 1) : 0;
   const pctColor = pct >= 0.9 ? '#DC2626' : pct >= 0.7 ? '#F59E0B' : '#22C55E';
   const remaining = Math.max(limite - total, 0);
@@ -151,7 +158,8 @@ export default function CategoriaDetalle() {
                 <Text style={s.txDate}>{fmtDate(item.creado_en)} · {fmtTime(item.creado_en)}</Text>
               </View>
               <Text style={s.txAmt}>
-                -{SYM[item.moneda] ?? item.moneda} {item.monto.toFixed(2)}
+                -{SYM[item.moneda ?? 'PEN'] ?? item.moneda ?? 'S/'} {item.monto.toFixed(2)}
+                {item.moneda && item.moneda !== 'PEN' ? ` ${item.moneda}` : ''}
               </Text>
             </View>
           )}

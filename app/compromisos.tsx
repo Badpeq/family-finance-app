@@ -122,8 +122,10 @@ export default function Compromisos() {
     if (!confirmAnular) return;
     setAnulando(true);
     const now = new Date();
-    // Set mes_fin to current month → recurrente ends after this month
-    const mesFin = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    // Set mes_fin to PREVIOUS month so v_gastos_programados_mes excludes it immediately
+    // (the view uses mes_fin >= current_period, so current_month would still match)
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const mesFin = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-01`;
 
     if (confirmAnular.tipo_programado === 'recurrente') {
       await supabase.from('gastos_recurrentes').update({ mes_fin: mesFin }).eq('id', confirmAnular.id);
