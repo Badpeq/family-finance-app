@@ -1,14 +1,16 @@
 import { Tabs } from 'expo-router';
-import { Platform, View } from 'react-native';
+import { Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-// Dot indicator — no emojis, renders perfectly on all platforms/manufacturers
-function Dot({ focused }: { focused: boolean }) {
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+
+function TabIcon({ name, focused }: { name: IoniconsName; focused: boolean }) {
   return (
-    <View style={{ width: 32, height: 6, alignItems: 'center', justifyContent: 'center' }}>
-      {focused && (
-        <View style={{ width: 20, height: 3, borderRadius: 2, backgroundColor: '#3B82F6' }} />
-      )}
-    </View>
+    <Ionicons
+      name={focused ? name : (`${name}-outline` as IoniconsName)}
+      size={24}
+      color={focused ? '#3B82F6' : '#9CA3AF'}
+    />
   );
 }
 
@@ -21,8 +23,8 @@ export default function TabsLayout() {
           backgroundColor: '#fff',
           borderTopColor: '#F3F4F6',
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 82 : 60,
-          paddingBottom: Platform.OS === 'ios' ? 22 : 8,
+          height: Platform.OS === 'ios' ? 88 : 68,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 10,
           paddingTop: 6,
           elevation: 8,
           shadowColor: '#000',
@@ -35,31 +37,45 @@ export default function TabsLayout() {
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
-          includeFontPadding: false,
-          marginTop: 0,
+          marginTop: 2,
         },
         tabBarItemStyle: { paddingHorizontal: 2 },
       }}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Inicio',     tabBarIcon: ({ focused }) => <Dot focused={focused} /> }}
+        options={{
+          title: 'Inicio',
+          tabBarIcon: ({ focused }) => <TabIcon name="home" focused={focused} />,
+        }}
       />
       <Tabs.Screen
         name="transacciones"
-        options={{ title: 'Movimientos', tabBarIcon: ({ focused }) => <Dot focused={focused} /> }}
+        options={{
+          title: 'Movimientos',
+          tabBarIcon: ({ focused }) => <TabIcon name="swap-horizontal" focused={focused} />,
+        }}
       />
       <Tabs.Screen
         name="analisis"
-        options={{ title: 'Análisis',   tabBarIcon: ({ focused }) => <Dot focused={focused} /> }}
+        options={{
+          title: 'Análisis',
+          tabBarIcon: ({ focused }) => <TabIcon name="bar-chart" focused={focused} />,
+        }}
       />
       <Tabs.Screen
         name="cuentas"
-        options={{ title: 'Cuentas',    tabBarIcon: ({ focused }) => <Dot focused={focused} /> }}
+        options={{
+          title: 'Cuentas',
+          tabBarIcon: ({ focused }) => <TabIcon name="wallet" focused={focused} />,
+        }}
       />
       <Tabs.Screen
         name="mas"
-        options={{ title: 'Config',     tabBarIcon: ({ focused }) => <Dot focused={focused} /> }}
+        options={{
+          title: 'Config',
+          tabBarIcon: ({ focused }) => <TabIcon name="settings" focused={focused} />,
+        }}
       />
     </Tabs>
   );
