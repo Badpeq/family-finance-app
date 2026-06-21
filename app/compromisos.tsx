@@ -37,6 +37,11 @@ const CAT_ICONS: Record<string, string> = {
 };
 const iconFor = (cat: string) => CAT_ICONS[cat] ?? '📦';
 
+// Module-level — survives re-mounts and navigations within the same app session.
+// Prevents cancelled items from reappearing if the view still returns them
+// (e.g. when aplicado=true and a linked transacción exists for the current month).
+const _cancelledIds = new Set<string>();
+
 export default function Compromisos() {
   const [items,          setItems]          = useState<CompromisoProgramado[]>([]);
   const [cuotas,         setCuotas]         = useState<Cuota[]>([]);
@@ -77,7 +82,10 @@ export default function Compromisos() {
 
         if (!active) return;
         if (profRes.data) setCurrency((profRes.data as any).moneda_base ?? 'PEN');
-        setItems((viewRes.data ?? []) as CompromisoProgramado[]);
+        // Filter out any items cancelled this session (prevents reappearance if the
+        // view still returns them when aplicado=true despite mes_fin being updated)
+        const raw = (viewRes.data ?? []) as CompromisoProgramado[];
+        setItems(raw.filter(i => !_cancelledIds.has(i.id)));
         setCuotas((cuotasRes.data ?? []) as Cuota[]);
         setLoading(false);
       })();
@@ -122,17 +130,35 @@ export default function Compromisos() {
     if (!confirmAnular) return;
     setAnulando(true);
     const now = new Date();
-    // Set mes_fin to PREVIOUS month so v_gastos_programados_mes excludes it immediately
-    // (the view uses mes_fin >= current_period, so current_month would still match)
+    // mes_fin = previous month → view condition (mes_fin >= current_period) is FALSE
+    // so the item is excluded from v_gastos_programados_mes on next refresh.
+    // Already-executed transactions in `transacciones` are never touched.
     const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const mesFin = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-01`;
 
+    let dbError: string | null = null;
     if (confirmAnular.tipo_programado === 'recurrente') {
-      await supabase.from('gastos_recurrentes').update({ mes_fin: mesFin }).eq('id', confirmAnular.id);
+      const { error } = await supabase
+        .from('gastos_recurrentes')
+        .update({ mes_fin: mesFin })
+        .eq('id', confirmAnular.id);
+      if (error) dbError = error.message;
     } else {
-      // For cuotas: delete the record
-      await supabase.from('compras_cuotas').delete().eq('id', confirmAnular.id);
+      const { error } = await supabase
+        .from('compras_cuotas')
+        .delete()
+        .eq('id', confirmAnular.id);
+      if (error) dbError = error.message;
     }
+
+    if (dbError) {
+      setAnulando(false);
+      return;
+    }
+
+    // Mark as cancelled so it's filtered out even if the view still returns it
+    // (can happen when aplicado=true and a linked transacción exists this month)
+    _cancelledIds.add(confirmAnular.id);
     setItems(prev => prev.filter(i => i.id !== confirmAnular!.id));
     setConfirmAnular(null);
     setAnulando(false);
