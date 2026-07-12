@@ -38,8 +38,9 @@ export default function Cuentas() {
   const [tarError,     setTarError]     = useState('');
   const [tarSaving,    setTarSaving]    = useState(false);
 
-  // Ciclo de facturación: gastosCiclo[tarjeta_id] = { total, desde, hasta }
-  const [gastosCiclo,  setGastosCiclo]  = useState<Record<string, { total:number; desde:Date; hasta:Date; sincronizando:boolean }>>({});
+  // Ciclo de facturación
+  const [gastosCiclo,   setGastosCiclo]  = useState<Record<string, { total:number; sincronizando:boolean }>>({});
+  const [cicloInputs,   setCicloInputs]  = useState<Record<string, { desde:string; hasta:string }>>({});
 
   // Préstamo
   const [showNewPre,   setShowNewPre]   = useState(false);
@@ -75,12 +76,16 @@ export default function Cuentas() {
         if (cueRes.data) setCuentas(cueRes.data as Cuenta[]);
         setLoading(false);
 
-        // Cargar gastos de ciclo para tarjetas con dia_cierre definido
+        // Inicializar inputs de ciclo con el mes actual para cada tarjeta
         if (tarRes.data) {
+          const hoy    = new Date();
+          const defDesde = `01/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+          const defHasta = `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+          const inputs: Record<string, { desde:string; hasta:string }> = {};
           for (const t of tarRes.data as Tarjeta[]) {
-            if (!t.dia_cierre) continue;
-            loadCiclo(t.id, t.dia_cierre);
+            inputs[t.id] = { desde: defDesde, hasta: defHasta };
           }
+          setCicloInputs(inputs);
         }
       })();
       return () => { active = false; };
@@ -91,59 +96,54 @@ export default function Cuentas() {
   const fmt = (n: number) => `${sym} ${n.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   // ── Ciclo facturación ──────────────────────────────────────────────────────
-  function calcCicloRange(diaCierre: number): { desde: Date; hasta: Date } {
-    const hoy   = new Date();
-    const diaH  = hoy.getDate();
-    let desde: Date;
-    let hasta: Date;
 
-    if (diaH >= diaCierre) {
-      // El cierre ya pasó este mes → ciclo: diaCierre de este mes hasta diaCierre del próximo
-      desde = new Date(hoy.getFullYear(), hoy.getMonth(), diaCierre);
-      hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, diaCierre);
-    } else {
-      // El cierre aún no llegó → ciclo: diaCierre del mes pasado hasta diaCierre de este mes
-      desde = new Date(hoy.getFullYear(), hoy.getMonth() - 1, diaCierre);
-      hasta = new Date(hoy.getFullYear(), hoy.getMonth(), diaCierre);
-    }
-    return { desde, hasta };
+  // Convierte DD/MM/AAAA → YYYY-MM-DD. Retorna null si formato inválido.
+  function parseDMY(s: string): string | null {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(s.trim())) return null;
+    const [dd, mm, yyyy] = s.trim().split('/');
+    const d = parseInt(dd,10), m = parseInt(mm,10), y = parseInt(yyyy,10);
+    if (d<1||d>31||m<1||m>12||y<2020||y>2100) return null;
+    return `${yyyy}-${mm}-${dd}`;
   }
 
-  async function loadCiclo(tarjetaId: string, diaCierre: number) {
-    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { ...prev[tarjetaId], sincronizando: true, total: prev[tarjetaId]?.total ?? 0, desde: prev[tarjetaId]?.desde ?? new Date(), hasta: prev[tarjetaId]?.hasta ?? new Date() } }));
+  async function loadCicloCustom(tarjetaId: string, desdeInput: string, hastaInput: string) {
+    const desdeStr = parseDMY(desdeInput);
+    const hastaStr = parseDMY(hastaInput);
+    if (!desdeStr || !hastaStr) return;
 
-    const { desde, hasta } = calcCicloRange(diaCierre);
-    const desdeStr = desde.toISOString().slice(0, 10);
-    const hastaStr = hasta.toISOString().slice(0, 10);
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total: prev[tarjetaId]?.total ?? 0, sincronizando: true } }));
 
+    // Fix bug: incluye txs sin fecha explícita usando creado_en como fallback
     const { data } = await supabase
       .from('transacciones')
       .select('monto,moneda,tipo_cambio')
       .eq('tarjeta_id', tarjetaId)
       .eq('metodo_pago', 'tarjeta')
       .eq('activo', true)
-      .gte('fecha', desdeStr)
-      .lt('fecha', hastaStr);
+      .or(
+        `and(fecha.gte.${desdeStr},fecha.lt.${hastaStr}),` +
+        `and(fecha.is.null,creado_en.gte.${desdeStr}T00:00:00,creado_en.lt.${hastaStr}T00:00:00)`
+      );
 
     const total = (data ?? []).reduce((sum, tx) => {
-      const m  = Number(tx.monto);
+      const m   = Number(tx.monto);
       const mon = tx.moneda ?? 'PEN';
       return sum + (mon === 'PEN' ? m : m * Number(tx.tipo_cambio ?? 1));
     }, 0);
 
-    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total, desde, hasta, sincronizando: false } }));
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total, sincronizando: false } }));
   }
 
   async function handleSyncDeudaCiclo(tar: Tarjeta) {
     const ciclo = gastosCiclo[tar.id];
-    if (!ciclo) return;
+    if (!ciclo || ciclo.sincronizando) return;
     const nueva = ciclo.total;
     await supabase.from('tarjetas_credito').update({ deuda_actual: nueva }).eq('id', tar.id);
     setTarjetas(prev => prev.map(t => t.id === tar.id ? { ...t, deuda_actual: nueva } : t));
   }
 
-  function fmtDate(d: Date) {
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  function setCicloInput(tarjetaId: string, field: 'desde'|'hasta', value: string) {
+    setCicloInputs(prev => ({ ...prev, [tarjetaId]: { ...prev[tarjetaId], [field]: value } }));
   }
 
   // ── Tarjeta handlers
@@ -160,7 +160,6 @@ export default function Cuentas() {
       const deuda = parseFloat(tarForm.deuda) || 0;
       await supabase.from('tarjetas_credito').update({ banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda, dia_cierre: diaCierre }).eq('id', editTar.id);
       setTarjetas(prev => prev.map(t => t.id === editTar.id ? { ...t, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda, dia_cierre: diaCierre } : t));
-      if (diaCierre) loadCiclo(editTar.id, diaCierre);
       setEditTar(null);
     } else {
       const { data, error } = await supabase.from('tarjetas_credito').insert({
@@ -171,7 +170,15 @@ export default function Cuentas() {
       if (error) { setTarError(error.message); setTarSaving(false); return; }
       if (data) {
         setTarjetas(prev => [...prev, data as Tarjeta]);
-        if ((data as Tarjeta).dia_cierre) loadCiclo((data as Tarjeta).id, (data as Tarjeta).dia_cierre!);
+        // Inicializar inputs de ciclo para la nueva tarjeta
+        const hoy = new Date();
+        setCicloInputs(prev => ({
+          ...prev,
+          [(data as Tarjeta).id]: {
+            desde: `01/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`,
+            hasta: `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`,
+          },
+        }));
       }
       setShowNewTar(false);
     }
@@ -320,40 +327,81 @@ export default function Cuentas() {
                     </TouchableOpacity>
                   </View>
 
-                  {/* ── Ciclo de facturación ── */}
-                  {t.dia_cierre && (
-                    <View style={styles.cicloBox}>
-                      {ciclo && !ciclo.sincronizando ? (
-                        <>
-                          <View style={{ flex:1 }}>
-                            <Text style={styles.cicloTitle}>Ciclo {fmtDate(ciclo.desde)} – {fmtDate(ciclo.hasta)}</Text>
-                            <Text style={styles.cicloTotal}>{fmt(ciclo.total)}</Text>
-                            <Text style={styles.cicloSub}>Gasto con tarjeta en este período</Text>
+                  {/* ── Consolidado de ciclo (manual) ── */}
+                  {(() => {
+                    const inputs = cicloInputs[t.id] ?? { desde:'', hasta:'' };
+                    const canCalc = !!parseDMY(inputs.desde) && !!parseDMY(inputs.hasta);
+                    return (
+                      <View style={styles.cicloBox}>
+                        <Text style={styles.cicloTitle}>CONSOLIDADO DE CICLO</Text>
+                        <View style={styles.cicloRow}>
+                          <View style={styles.cicloField}>
+                            <Text style={styles.cicloFieldLabel}>Desde</Text>
+                            <TextInput
+                              style={styles.cicloInput}
+                              value={inputs.desde}
+                              onChangeText={v => {
+                                const digits = v.replace(/\D/g,'').slice(0,8);
+                                let out = digits;
+                                if (digits.length>=5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
+                                else if (digits.length>=3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
+                                setCicloInput(t.id,'desde',out);
+                              }}
+                              placeholder="DD/MM/AAAA"
+                              placeholderTextColor="#9CA3AF"
+                              keyboardType="numeric"
+                              maxLength={10}
+                            />
+                          </View>
+                          <View style={styles.cicloField}>
+                            <Text style={styles.cicloFieldLabel}>Hasta</Text>
+                            <TextInput
+                              style={styles.cicloInput}
+                              value={inputs.hasta}
+                              onChangeText={v => {
+                                const digits = v.replace(/\D/g,'').slice(0,8);
+                                let out = digits;
+                                if (digits.length>=5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
+                                else if (digits.length>=3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
+                                setCicloInput(t.id,'hasta',out);
+                              }}
+                              placeholder="DD/MM/AAAA"
+                              placeholderTextColor="#9CA3AF"
+                              keyboardType="numeric"
+                              maxLength={10}
+                            />
                           </View>
                           <TouchableOpacity
-                            style={styles.cicloBtn}
-                            onPress={() => handleSyncDeudaCiclo(t)}
+                            style={[styles.cicloCalcBtn, !canCalc && { opacity:0.4 }]}
+                            onPress={() => canCalc && loadCicloCustom(t.id, inputs.desde, inputs.hasta)}
+                            disabled={!canCalc}
                           >
-                            <Text style={styles.cicloBtnText}>Actualizar deuda</Text>
+                            <Text style={styles.cicloCalcText}>Calcular</Text>
                           </TouchableOpacity>
-                        </>
-                      ) : (
-                        <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
-                          <ActivityIndicator size="small" color="#DC2626" />
-                          <Text style={styles.cicloSub}>Calculando ciclo…</Text>
                         </View>
-                      )}
-                    </View>
-                  )}
-
-                  {!t.dia_cierre && (
-                    <TouchableOpacity
-                      style={styles.cicloSetupBtn}
-                      onPress={() => openEditTar(t)}
-                    >
-                      <Text style={styles.cicloSetupText}>+ Definir ciclo de facturación</Text>
-                    </TouchableOpacity>
-                  )}
+                        {ciclo ? (
+                          ciclo.sincronizando ? (
+                            <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginTop:8 }}>
+                              <ActivityIndicator size="small" color="#DC2626" />
+                              <Text style={styles.cicloSub}>Calculando…</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.cicloResult}>
+                              <View>
+                                <Text style={styles.cicloTotal}>{fmt(ciclo.total)}</Text>
+                                <Text style={styles.cicloSub}>Total de gastos con esta tarjeta</Text>
+                              </View>
+                              <TouchableOpacity style={styles.cicloBtn} onPress={() => handleSyncDeudaCiclo(t)}>
+                                <Text style={styles.cicloBtnText}>Actualizar{'\n'}deuda</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )
+                        ) : (
+                          <Text style={[styles.cicloSub, { marginTop:6 }]}>Ingresa un rango y toca Calcular</Text>
+                        )}
+                      </View>
+                    );
+                  })()}
 
                   {i < tarjetas.length - 1 && <View style={[styles.rowSep, { marginTop: 8 }]} />}
                 </View>
@@ -601,14 +649,19 @@ const styles = StyleSheet.create({
   editBtn:     { width:32, height:32, borderRadius:8, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', flexShrink:0 },
   editBtnText: { fontSize:15, color:'#6B7280' },
 
-  cicloBox:       { flexDirection:'row', alignItems:'center', backgroundColor:'#FFF7F7', borderRadius:10, padding:10, marginBottom:8, gap:10 },
-  cicloTitle:     { fontSize:10, fontWeight:'700', color:'#DC2626', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 },
-  cicloTotal:     { fontSize:16, fontWeight:'800', color:'#111827' },
-  cicloSub:       { fontSize:10, color:'#9CA3AF', marginTop:1 },
-  cicloBtn:       { backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, paddingVertical:7 },
-  cicloBtnText:   { fontSize:11, fontWeight:'700', color:'#fff' },
-  cicloSetupBtn:  { paddingVertical:6, paddingHorizontal:2, marginBottom:6 },
-  cicloSetupText: { fontSize:12, color:'#3B82F6', fontWeight:'500' },
+  cicloBox:        { backgroundColor:'#FFF7F7', borderRadius:10, padding:10, marginBottom:8 },
+  cicloTitle:      { fontSize:10, fontWeight:'700', color:'#DC2626', textTransform:'uppercase', letterSpacing:0.5, marginBottom:8 },
+  cicloRow:        { flexDirection:'row', alignItems:'flex-end', gap:6 },
+  cicloField:      { flex:1 },
+  cicloFieldLabel: { fontSize:10, fontWeight:'600', color:'#6B7280', marginBottom:3 },
+  cicloInput:      { height:36, backgroundColor:'#fff', borderWidth:1, borderColor:'#FCA5A5', borderRadius:8, paddingHorizontal:8, fontSize:12, color:'#111827' },
+  cicloCalcBtn:    { height:36, backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, justifyContent:'center', alignItems:'center' },
+  cicloCalcText:   { fontSize:12, fontWeight:'700', color:'#fff' },
+  cicloResult:     { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:10 },
+  cicloTotal:      { fontSize:18, fontWeight:'800', color:'#111827' },
+  cicloSub:        { fontSize:10, color:'#9CA3AF', marginTop:1 },
+  cicloBtn:        { backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, paddingVertical:7, alignItems:'center' },
+  cicloBtnText:    { fontSize:10, fontWeight:'700', color:'#fff', textAlign:'center' },
 
   fab:     { position:'absolute', bottom:24, right:20, width:56, height:56, borderRadius:28,
              backgroundColor:'#3B82F6', justifyContent:'center', alignItems:'center',

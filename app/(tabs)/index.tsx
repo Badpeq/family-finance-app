@@ -162,20 +162,26 @@ export default function Dashboard() {
     return m * (tx.tipo_cambio ?? rate.venta);
   }
 
-  const income         = txs.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + toPENAmount(t), 0);
-  // Separate regular expenses from one-time (únicos) for accurate run-rate
-  const expensesRec    = txs.filter(t => t.tipo === 'gasto' && !t.es_gasto_unico).reduce((s, t) => s + toPENAmount(t), 0);
-  const expensesUnicos = txs.filter(t => t.tipo === 'gasto' &&  t.es_gasto_unico).reduce((s, t) => s + toPENAmount(t), 0);
-  const expenses       = expensesRec + expensesUnicos;
+  const income = txs.filter(t => t.tipo === 'ingreso').reduce((s, t) => s + toPENAmount(t), 0);
+
+  // Compromisos fijos ya aplicados (gastos_recurrentes_id set): valor nominal, sin prorratear
+  const expensesFijos  = txs.filter(t => t.tipo === 'gasto' && !t.es_gasto_unico && !!t.gastos_recurrentes_id).reduce((s, t) => s + toPENAmount(t), 0);
+  // Gastos variables del día a día: estos sí se prorratean al fin de mes
+  const expensesVar    = txs.filter(t => t.tipo === 'gasto' && !t.es_gasto_unico && !t.gastos_recurrentes_id).reduce((s, t) => s + toPENAmount(t), 0);
+  // Gastos únicos (viajes, compras puntuales): se suman tal cual, no se repiten
+  const expensesUnicos = txs.filter(t => t.tipo === 'gasto' &&  !!t.es_gasto_unico).reduce((s, t) => s + toPENAmount(t), 0);
+  const expenses       = expensesFijos + expensesVar + expensesUnicos;
   const balance        = income - expenses;
 
   const daysInMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysElapsed  = now.getDate();
   const totalPres    = presupuestos.reduce((s, p) => s + p.monto_limite, 0);
-  // Run-rate: project regular expenses only; únicos are already paid, not repeated
-  const runRate            = daysElapsed > 0 ? (expensesRec / daysElapsed) * daysInMonth : 0;
+
+  // Solo los gastos variables se prorratean; los fijos y únicos van a valor nominal
+  const runRate             = daysElapsed > 0 ? (expensesVar / daysElapsed) * daysInMonth : 0;
   const totalPendingCommits = pendingCommits.reduce((s, r) => s + r.monto, 0);
-  const proyectado          = runRate + expensesUnicos + totalPendingCommits;
+  // proyectado = variables proyectados + fijos ya pagados (no se repiten) + únicos + pendientes
+  const proyectado          = runRate + expensesFijos + expensesUnicos + totalPendingCommits;
   const presProgress = totalPres > 0 ? Math.min(expenses / totalPres, 1) : 0;
   const proyColor    = totalPres > 0 && proyectado > totalPres      ? C.red
                      : totalPres > 0 && proyectado > totalPres * 0.85 ? C.amber
@@ -319,8 +325,8 @@ export default function Dashboard() {
             {showProyectadoInfo && !loading && (
               <View style={s.proyDetail}>
                 <View style={s.proyDetailRow}>
-                  <Text style={s.proyDetailLabel}>Gastos regulares (hoy)</Text>
-                  <Text style={s.proyDetailVal}>{fmt(expensesRec, currency)}</Text>
+                  <Text style={s.proyDetailLabel}>Gastos variables (hoy)</Text>
+                  <Text style={s.proyDetailVal}>{fmt(expensesVar, currency)}</Text>
                 </View>
                 <View style={s.proyDetailRow}>
                   <Text style={s.proyDetailLabel}>÷ Días transcurridos</Text>
@@ -331,9 +337,15 @@ export default function Dashboard() {
                   <Text style={s.proyDetailVal}>{daysInMonth} días</Text>
                 </View>
                 <View style={s.proyDetailRow}>
-                  <Text style={s.proyDetailLabel}>= Run-rate</Text>
+                  <Text style={s.proyDetailLabel}>= Run-rate variables</Text>
                   <Text style={s.proyDetailVal}>{fmt(runRate, currency)}</Text>
                 </View>
+                {expensesFijos > 0 && (
+                  <View style={s.proyDetailRow}>
+                    <Text style={s.proyDetailLabel}>+ Compromisos fijos aplicados 🔄</Text>
+                    <Text style={s.proyDetailVal}>{fmt(expensesFijos, currency)}</Text>
+                  </View>
+                )}
                 {expensesUnicos > 0 && (
                   <View style={s.proyDetailRow}>
                     <Text style={s.proyDetailLabel}>+ Gastos únicos ⚡</Text>
