@@ -4,3 +4,6 @@ id = "tsdawpxiqqnesikcqlex"
 
 [functions.whatsapp-webhook]
 verify_jwt = false   # Meta envía requests sin JWT de Supabase — la seguridad viene del HMAC-SHA256
+
+[functions.ingest-transaction]
+verify_jwt = false   # La seguridad viene del token en la tabla ingest_tokens
