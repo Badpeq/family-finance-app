@@ -44,22 +44,6 @@ function parseMes(input: string): string | null {
   return `${yyyy}-${mm}-01`;
 }
 
-function parseFecha(input: string): string | null {
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(input.trim())) return null;
-  const [dd, mm, yyyy] = input.split('/');
-  const d = parseInt(dd, 10), m = parseInt(mm, 10), y = parseInt(yyyy, 10);
-  if (d < 1 || d > 31 || m < 1 || m > 12 || y < 2020 || y > 2100) return null;
-  return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
-}
-
-function todayFormatted(): string {
-  const now = new Date();
-  const dd   = String(now.getDate()).padStart(2, '0');
-  const mm   = String(now.getMonth() + 1).padStart(2, '0');
-  const yyyy = now.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
-}
-
 function fmtDeuda(simbolo: string, monto: number, linea: number) {
   const d = Number(monto).toLocaleString('es-PE', { minimumFractionDigits: 2 });
   if (linea > 0) {
@@ -76,39 +60,39 @@ export default function Registrar() {
   const accent    = esIngreso ? '#059669' : '#DC2626';
   const headerBg  = esIngreso ? '#D1FAE5' : '#FEE2E2';
 
+  // ── Categorías dinámicas desde DB
+  const { categorias: catGasto } = useCategorias();
+
   // ── Multi-moneda
   const { rate } = useExchangeRate();
+  // txMoneda: moneda en la que el usuario está ingresando este movimiento
   const [txMoneda, setTxMoneda] = useState<'PEN'|'USD'>('PEN');
   const simbolo = CURRENCY_SYMBOL[txMoneda] ?? 'S/';
 
-  // ── Categorías dinámicas
-  const { categorias: catGasto, loading: loadingCats } = useCategorias();
-  const catIngreso = BASE_INCOME_CATS;
-
   // ── Tab state
   const [gastoTab, setGastoTab] = useState<GastoTab>('unica');
-
-  // ── Subcategorías (dinámicas según categoría seleccionada)
-  const [subcats,         setSubcats]         = useState<{ id: string; nombre: string }[]>([]);
-  const [subcatId,        setSubcatId]        = useState<string | null>(null);
-  const [showSubcatPicker,setShowSubcatPicker]= useState(false);
 
   // ── Shared UI
   const [loading,           setLoading]           = useState(false);
   const [error,             setError]             = useState('');
   const [showPicker,        setShowPicker]        = useState(false);
+  const [showSubcatPicker,  setShowSubcatPicker]  = useState(false);
   const [showTarjetaPicker, setShowTarjetaPicker] = useState(false);
   const [showNuevaTarjeta,  setShowNuevaTarjeta]  = useState(false);
+
+  // ── Subcategorías (solo gasto único)
+  const [subcatId,       setSubcatId]       = useState<string | null>(null);
+  const [subcats,        setSubcats]        = useState<{ id: string; nombre: string }[]>([]);
+  const [subcatsLoading, setSubcatsLoading] = useState(false);
   const [savingTarjeta,     setSavingTarjeta]     = useState(false);
 
   // ── Tarjetas
   const [tarjetas,     setTarjetas]     = useState<Tarjeta[]>([]);
   const [nuevaTarjeta, setNuevaTarjeta] = useState({ banco: '', nombre: '', linea: '', cierre: '', deudaInicial: '' });
 
-  // ── Forms (añadido campo fecha a cada uno)
-  const today = todayFormatted();
-  const [iU, setIU] = useState({ monto: '', categoria: '', descripcion: '', fecha: today });
-  const [gU, setGU] = useState({ monto: '', categoria: '', descripcion: '', metodoPago: 'efectivo' as MetodoPago, tarjetaId: '', fecha: today });
+  // ── Forms
+  const [iU, setIU] = useState({ monto: '', categoria: '', descripcion: '' });
+  const [gU, setGU] = useState({ monto: '', categoria: '', descripcion: '', metodoPago: 'efectivo' as MetodoPago, tarjetaId: '' });
   const [gR, setGR] = useState({ monto: '', categoria: '', descripcion: '', diaCobro: '', mesInicio: '', mesFin: '' });
   const [gC, setGC] = useState({ descripcion: '', montoTotal: '', totalCuotas: '', categoria: '', diaCobro: '', mesInicio: '', metodoPago: 'efectivo' as MetodoPago, tarjetaId: '' });
 
@@ -127,10 +111,12 @@ export default function Registrar() {
       if (mounted && data) setTarjetas(data);
     })();
     return () => { mounted = false; };
-  }, []); // esIngreso es constante durante el ciclo de vida de esta pantalla
+  }, []); // esIngreso is constant for the lifetime of this screen
 
   // ── Derived
-  const pickerCategorias = esIngreso ? catIngreso : catGasto;
+  const pickerCategorias = esIngreso
+    ? BASE_INCOME_CATS.map(c => c.nombre)
+    : catGasto.map(c => c.nombre);
   const categoriaActual  = esIngreso
     ? iU.categoria
     : gastoTab === 'unica' ? gU.categoria
@@ -147,23 +133,31 @@ export default function Registrar() {
   })();
 
   // ── Handlers
-  const selectCategoria = async (cat: string) => {
-    if (esIngreso)                      setIU(s => ({ ...s, categoria: cat }));
-    else if (gastoTab === 'unica')      setGU(s => ({ ...s, categoria: cat }));
-    else if (gastoTab === 'recurrente') setGR(s => ({ ...s, categoria: cat }));
-    else                                setGC(s => ({ ...s, categoria: cat }));
-    setShowPicker(false);
-    // Resetear subcategoría y cargar las de la nueva categoría
+  const loadSubcats = async (cat: string) => {
     setSubcatId(null);
     setSubcats([]);
-    if (!esIngreso && gastoTab === 'unica') {
-      const { data } = await supabase
-        .from('subcategorias')
-        .select('id, nombre')
-        .eq('categoria_nombre', cat)
-        .order('nombre');
-      if (data && data.length > 0) setSubcats(data);
+    setSubcatsLoading(true);
+    const { data } = await supabase
+      .from('subcategorias')
+      .select('id,nombre')
+      .eq('categoria_nombre', cat)
+      .order('nombre');
+    setSubcats(data ?? []);
+    setSubcatsLoading(false);
+  };
+
+  const selectCategoria = (cat: string) => {
+    if (esIngreso) {
+      setIU(s => ({ ...s, categoria: cat }));
+    } else if (gastoTab === 'unica') {
+      setGU(s => ({ ...s, categoria: cat }));
+      loadSubcats(cat);
+    } else if (gastoTab === 'recurrente') {
+      setGR(s => ({ ...s, categoria: cat }));
+    } else {
+      setGC(s => ({ ...s, categoria: cat }));
     }
+    setShowPicker(false);
   };
 
   const selectTarjeta = (id: string) => {
@@ -205,23 +199,17 @@ export default function Registrar() {
     if (!user) { setError('Sesión no encontrada.'); setLoading(false); return; }
 
     let dbError: { message: string } | null = null;
-    const tcHoy = rate.venta;
+
+    const tcHoy = rate.venta; // tasa venta PEN/USD del día
 
     if (esIngreso) {
       const m = parseMonto(iU.monto);
       if (isNaN(m) || m <= 0) { setError('Ingresa un monto válido.'); setLoading(false); return; }
       if (!iU.categoria)       { setError('Selecciona una categoría.'); setLoading(false); return; }
-      const fechaParsed = parseFecha(iU.fecha);
-      if (!fechaParsed)         { setError('Fecha inválida. Usa DD/MM/AAAA.'); setLoading(false); return; }
       const { error: e } = await supabase.from('transacciones').insert({
-        user_id:     user.id,
-        tipo:        'ingreso',
-        monto:       m,
-        categoria:   iU.categoria,
-        descripcion: iU.descripcion.trim() || null,
-        moneda:      txMoneda,
-        tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
-        fecha:       fechaParsed,
+        user_id: user.id, tipo: 'ingreso', monto: m,
+        categoria: iU.categoria, descripcion: iU.descripcion.trim() || null,
+        moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
       });
       dbError = e;
 
@@ -230,21 +218,13 @@ export default function Registrar() {
       if (isNaN(m) || m <= 0)                           { setError('Ingresa un monto válido.'); setLoading(false); return; }
       if (!gU.categoria)                                 { setError('Selecciona una categoría.'); setLoading(false); return; }
       if (gU.metodoPago === 'tarjeta' && !gU.tarjetaId) { setError('Selecciona una tarjeta de crédito.'); setLoading(false); return; }
-      const fechaParsed = parseFecha(gU.fecha);
-      if (!fechaParsed)                                  { setError('Fecha inválida. Usa DD/MM/AAAA.'); setLoading(false); return; }
       const { error: e } = await supabase.from('transacciones').insert({
-        user_id:        user.id,
-        tipo:           'gasto',
-        monto:          m,
-        categoria:      gU.categoria,
-        descripcion:    gU.descripcion.trim() || null,
-        metodo_pago:    gU.metodoPago,
-        tarjeta_id:     gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
-        moneda:         txMoneda,
-        tipo_cambio:    txMoneda === 'USD' ? tcHoy : 1.0,
-        fecha:          fechaParsed,
-        es_gasto_unico: true,
+        user_id: user.id, tipo: 'gasto', monto: m,
+        categoria: gU.categoria, descripcion: gU.descripcion.trim() || null,
+        metodo_pago: gU.metodoPago,
+        tarjeta_id: gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
         subcategoria_id: subcatId ?? null,
+        moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
       });
       dbError = e;
 
@@ -259,18 +239,13 @@ export default function Registrar() {
       if (!mi)                             { setError('Mes de inicio inválido. Usa MM/AAAA.'); setLoading(false); return; }
       if (gR.mesFin.trim() && !mf)         { setError('Mes de fin inválido. Usa MM/AAAA.'); setLoading(false); return; }
       const { error: e } = await supabase.from('gastos_recurrentes').insert({
-        user_id:     user.id,
-        monto:       m,
-        categoria:   gR.categoria,
+        user_id: user.id, monto: m, categoria: gR.categoria,
         descripcion: gR.descripcion.trim() || null,
-        dia_cobro:   dc,
-        mes_inicio:  mi,
-        mes_fin:     mf,
+        dia_cobro: dc, mes_inicio: mi, mes_fin: mf,
       });
       dbError = e;
 
     } else {
-      // Cuotas
       const mt = parseMonto(gC.montoTotal);
       const tc = parseInt(gC.totalCuotas, 10);
       const dc = parseInt(gC.diaCobro, 10);
@@ -283,16 +258,12 @@ export default function Registrar() {
       if (!mi)                                            { setError('Mes de inicio inválido. Usa MM/AAAA.'); setLoading(false); return; }
       if (gC.metodoPago === 'tarjeta' && !gC.tarjetaId) { setError('Selecciona una tarjeta de crédito.'); setLoading(false); return; }
       const { error: e } = await supabase.from('compras_cuotas').insert({
-        user_id:       user.id,
-        descripcion:   gC.descripcion.trim(),
-        categoria:     gC.categoria,
-        monto_total:   mt,
-        total_cuotas:  tc,
-        monto_cuota:   Math.round((mt / tc) * 100) / 100,
-        dia_cobro:     dc,
-        mes_inicio:    mi,
-        metodo_pago:   gC.metodoPago,
-        tarjeta_id:    gC.metodoPago === 'tarjeta' ? gC.tarjetaId : null,
+        user_id: user.id, descripcion: gC.descripcion.trim(), categoria: gC.categoria,
+        monto_total: mt, total_cuotas: tc,
+        monto_cuota: Math.round((mt / tc) * 100) / 100,
+        dia_cobro: dc, mes_inicio: mi,
+        metodo_pago: gC.metodoPago,
+        tarjeta_id: gC.metodoPago === 'tarjeta' ? gC.tarjetaId : null,
       });
       dbError = e;
     }
@@ -346,22 +317,6 @@ export default function Registrar() {
         )}
         <Text style={styles.chevron}>›</Text>
       </TouchableOpacity>
-    </>
-  );
-
-  const FechaField = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <>
-      <Text style={styles.label}>Fecha <Text style={styles.optional}>(DD/MM/AAAA)</Text></Text>
-      <TextInput
-        style={styles.input}
-        placeholder={todayFormatted()}
-        placeholderTextColor="#9CA3AF"
-        keyboardType="numbers-and-punctuation"
-        value={value}
-        onChangeText={onChange}
-        editable={!loading}
-        maxLength={10}
-      />
     </>
   );
 
@@ -444,15 +399,12 @@ export default function Registrar() {
                 editable={!loading} autoFocus />
             </View>
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
               <Text style={iU.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {iU.categoria
-                  ? `${catIngreso.find(c=>c.nombre===iU.categoria)?.icono ?? '📦'} ${iU.categoria}`
-                  : 'Selecciona una categoría'}
+                {iU.categoria || 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
-            <FechaField value={iU.fecha} onChange={v => setIU(s => ({ ...s, fecha: v }))} />
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Sueldo de julio"
               placeholderTextColor="#9CA3AF" value={iU.descripcion}
@@ -464,9 +416,6 @@ export default function Registrar() {
         {/* ── Gasto Único ── */}
         {!esIngreso && gastoTab === 'unica' && (
           <>
-            <View style={styles.hint}>
-              <Text style={styles.hintText}>Gasto puntual no recurrente. Se marcará como <Text style={{ fontWeight: '700' }}>único</Text> para excluirlo del prorrateo diario.</Text>
-            </View>
             <Text style={styles.label}>Monto</Text>
             <View style={styles.montoWrap}>
               <Text style={[styles.montoPrefix, { color: accent }]}>{simbolo}</Text>
@@ -476,24 +425,29 @@ export default function Registrar() {
                 editable={!loading} autoFocus />
             </View>
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
               <Text style={gU.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {gU.categoria
-                  ? `${catGasto.find(c=>c.nombre===gU.categoria)?.icono ?? '📦'} ${gU.categoria}`
-                  : 'Selecciona una categoría'}
+                {gU.categoria || 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
-            {/* Subcategoría dinámica */}
-            {subcats.length > 0 && (
+            {gU.categoria !== '' && (
               <>
                 <Text style={styles.label}>Subcategoría <Text style={styles.optional}>(opcional)</Text></Text>
-                <TouchableOpacity style={styles.selector} onPress={() => setShowSubcatPicker(true)} disabled={loading}>
-                  <Text style={subcatId ? styles.selectorText : styles.selectorPlaceholder}>
-                    {subcatId ? (subcats.find(s => s.id === subcatId)?.nombre ?? 'Selecciona') : 'Sin subcategoría'}
-                  </Text>
-                  <Text style={styles.chevron}>›</Text>
-                </TouchableOpacity>
+                {subcatsLoading ? (
+                  <ActivityIndicator color={accent} style={{ marginVertical: 8, alignSelf: 'flex-start' }} />
+                ) : subcats.length > 0 ? (
+                  <TouchableOpacity style={styles.selector} onPress={() => setShowSubcatPicker(true)} disabled={loading}>
+                    <Text style={subcatId ? styles.selectorText : styles.selectorPlaceholder}>
+                      {subcats.find(s => s.id === subcatId)?.nombre ?? 'Sin subcategoría'}
+                    </Text>
+                    <Text style={styles.chevron}>›</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={[styles.hint, { marginTop: 0 }]}>
+                    <Text style={styles.hintText}>Sin subcategorías para esta categoría.</Text>
+                  </View>
+                )}
               </>
             )}
             <Text style={styles.label}>Método de pago</Text>
@@ -503,7 +457,6 @@ export default function Registrar() {
               onTarjeta={() => setGU(s => ({ ...s, metodoPago: 'tarjeta' }))}
             />
             {gU.metodoPago === 'tarjeta' && <TarjetaSelector />}
-            <FechaField value={gU.fecha} onChange={v => setGU(s => ({ ...s, fecha: v }))} />
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Supermercado del lunes"
               placeholderTextColor="#9CA3AF" value={gU.descripcion}
@@ -527,11 +480,9 @@ export default function Registrar() {
                 editable={!loading} autoFocus />
             </View>
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
               <Text style={gR.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {gR.categoria
-                  ? `${catGasto.find(c=>c.nombre===gR.categoria)?.icono ?? '📦'} ${gR.categoria}`
-                  : 'Selecciona una categoría'}
+                {gR.categoria || 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
@@ -603,11 +554,9 @@ export default function Registrar() {
               </View>
             )}
             <Text style={styles.label}>Categoría</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading || loadingCats}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowPicker(true)} disabled={loading}>
               <Text style={gC.categoria ? styles.selectorText : styles.selectorPlaceholder}>
-                {gC.categoria
-                  ? `${catGasto.find(c=>c.nombre===gC.categoria)?.icono ?? '📦'} ${gC.categoria}`
-                  : 'Selecciona una categoría'}
+                {gC.categoria || 'Selecciona una categoría'}
               </Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
@@ -646,6 +595,34 @@ export default function Registrar() {
         <View style={{ height: 48 }} />
       </ScrollView>
 
+      {/* ── Subcategory Picker ── */}
+      <Modal visible={showSubcatPicker} animationType="slide" transparent>
+        <SafeAreaView style={styles.backdrop}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Selecciona una subcategoría</Text>
+              <TouchableOpacity onPress={() => setShowSubcatPicker(false)}>
+                <Text style={[styles.closeBtn, { color: accent }]}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={[{ id: null as string | null, nombre: 'Sin subcategoría' }, ...subcats]}
+              keyExtractor={(item, i) => item.id ?? `none-${i}`}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.option}
+                  onPress={() => { setSubcatId(item.id); setShowSubcatPicker(false); }}
+                >
+                  <Text style={styles.optionText}>{item.nombre}</Text>
+                  {subcatId === item.id && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
+                </TouchableOpacity>
+              )}
+              ItemSeparatorComponent={() => <View style={styles.sep} />}
+            />
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* ── Category Picker ── */}
       <Modal visible={showPicker} animationType="slide" transparent>
         <SafeAreaView style={styles.backdrop}>
@@ -656,47 +633,12 @@ export default function Registrar() {
                 <Text style={[styles.closeBtn, { color: accent }]}>Cerrar</Text>
               </TouchableOpacity>
             </View>
-            {loadingCats ? (
-              <ActivityIndicator color={accent} style={{ margin: 24 }} />
-            ) : (
-              <FlatList
-                data={pickerCategorias}
-                keyExtractor={item => item.nombre}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.option} onPress={() => selectCategoria(item.nombre)}>
-                    <Text style={styles.optionText}>{item.icono} {item.nombre}</Text>
-                    {categoriaActual === item.nombre && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
-                  </TouchableOpacity>
-                )}
-                ItemSeparatorComponent={() => <View style={styles.sep} />}
-              />
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
-
-      {/* ── Subcategoría Picker ── */}
-      <Modal visible={showSubcatPicker} animationType="slide" transparent>
-        <SafeAreaView style={styles.backdrop}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Subcategoría</Text>
-              <TouchableOpacity onPress={() => setShowSubcatPicker(false)}>
-                <Text style={[styles.closeBtn, { color: accent }]}>Cerrar</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={styles.option} onPress={() => { setSubcatId(null); setShowSubcatPicker(false); }}>
-              <Text style={styles.optionText}>Sin subcategoría</Text>
-              {!subcatId && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
-            </TouchableOpacity>
-            <View style={styles.sep} />
             <FlatList
-              data={subcats}
-              keyExtractor={item => item.id}
+              data={pickerCategorias} keyExtractor={item => item}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.option} onPress={() => { setSubcatId(item.id); setShowSubcatPicker(false); }}>
-                  <Text style={styles.optionText}>{item.nombre}</Text>
-                  {subcatId === item.id && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
+                <TouchableOpacity style={styles.option} onPress={() => selectCategoria(item)}>
+                  <Text style={styles.optionText}>{item}</Text>
+                  {categoriaActual === item && <Text style={[styles.checkmark, { color: accent }]}>✓</Text>}
                 </TouchableOpacity>
               )}
               ItemSeparatorComponent={() => <View style={styles.sep} />}
@@ -918,6 +860,7 @@ const styles = StyleSheet.create({
   sep:        { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
   emptyMsg:   { fontSize: 14, color: '#6B7280', textAlign: 'center' },
 
+  // Multi-moneda
   currencyRow:    { flexDirection:'row', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap' },
   currencyLabel:  { fontSize:13, fontWeight:'600', color:'#374151' },
   currencyToggle: { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, gap:0 },

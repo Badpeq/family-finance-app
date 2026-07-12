@@ -8,7 +8,6 @@ export interface Categoria {
   es_personalizada: boolean;
 }
 
-// Categorías base de gasto — usadas como fallback si la vista no responde
 const BASE_EXPENSE_CATS: Categoria[] = [
   { id: null, nombre: 'Alimentación',    icono: '🛒', es_personalizada: false },
   { id: null, nombre: 'Transporte',      icono: '🚗', es_personalizada: false },
@@ -22,7 +21,6 @@ const BASE_EXPENSE_CATS: Categoria[] = [
   { id: null, nombre: 'Otros',           icono: '📦', es_personalizada: false },
 ];
 
-// Categorías de ingreso — no vienen de la vista (son fijas del sistema)
 export const BASE_INCOME_CATS: Categoria[] = [
   { id: null, nombre: 'Sueldo',      icono: '💼', es_personalizada: false },
   { id: null, nombre: 'Bono',        icono: '🎁', es_personalizada: false },
@@ -32,27 +30,14 @@ export const BASE_INCOME_CATS: Categoria[] = [
   { id: null, nombre: 'Otros',       icono: '📦', es_personalizada: false },
 ];
 
-// Mapa icono global para todas las categorías conocidas
 export const ICON_MAP: Record<string, string> = {
-  // Gasto
   Alimentación: '🛒', Transporte: '🚗', Vivienda: '🏠',
   Entretenimiento: '🎬', Salud: '💊', Educación: '📚',
   Ropa: '👕', Servicios: '⚡', Restaurantes: '🍽️', Otros: '📦',
-  // Ingreso
   Sueldo: '💼', Bono: '🎁', Freelance: '💻', Inversiones: '📈', Negocio: '🏪',
-  // Sistema
   Ahorro: '🏦', 'Retiro Ahorro': '💰', 'Pago Tarjeta': '💳', 'Abono Préstamo': '📋',
 };
 
-/**
- * Hook que devuelve las categorías de gasto unificadas:
- *   - categorías base del sistema
- *   - categorías personalizadas del usuario (public.categorias_personalizadas)
- *   - categorías inferidas del presupuesto_template del onboarding
- *
- * Usa la vista public.v_categorias (migration_v8). Si la vista aún no existe
- * (DB sin v8 ejecutada), cae al fallback hardcodeado sin romper la UI.
- */
 export function useCategorias() {
   const [categorias, setCategorias] = useState<Categoria[]>(BASE_EXPENSE_CATS);
   const [loading,    setLoading]    = useState(true);
@@ -68,16 +53,17 @@ export function useCategorias() {
           .order('nombre',     { ascending: true });
 
         if (active && !error && data && data.length > 0) {
-          setCategorias(
-            data.map(r => ({
-              id:               r.id as string | null,
-              nombre:           r.nombre as string,
-              icono:            r.icono  as string,
-              es_personalizada: r.es_personalizada as boolean,
-            }))
-          );
+          const fromDB = data.map(r => ({
+            id:               r.id as string | null,
+            nombre:           r.nombre as string,
+            icono:            r.icono  as string,
+            es_personalizada: r.es_personalizada as boolean,
+          }));
+          // Always include base categories — merge DB data with base, avoiding duplicates
+          const fromDBNames = new Set(fromDB.map(c => c.nombre));
+          const baseNotInDB = BASE_EXPENSE_CATS.filter(c => !fromDBNames.has(c.nombre));
+          setCategorias([...fromDB, ...baseNotInDB]);
         }
-        // Si hay error (vista no existe todavía) → se queda con el fallback BASE_EXPENSE_CATS
       } finally {
         if (active) setLoading(false);
       }
@@ -88,8 +74,6 @@ export function useCategorias() {
   return { categorias, loading };
 }
 
-/** Devuelve el icono de una categoría, buscando primero en el mapa global
- *  y luego en la lista de categorías cargadas por el hook. */
 export function iconForCat(nombre: string, cats: Categoria[]): string {
   if (ICON_MAP[nombre]) return ICON_MAP[nombre];
   return cats.find(c => c.nombre === nombre)?.icono ?? '📦';

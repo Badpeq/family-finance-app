@@ -6,7 +6,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
-interface Tarjeta  { id:string; banco:string; nombre_tarjeta:string; deuda_actual:number; linea_credito:number }
+interface Tarjeta  { id:string; banco:string; nombre_tarjeta:string; deuda_actual:number; linea_credito:number; dia_cierre:number|null }
 interface Prestamo { id:string; entidad_persona:string; tipo:'recibido'|'otorgado'; saldo_pendiente:number; monto_mensual:number; cuotas_estimadas:number|null; cuotas_pagadas:number }
 interface Cuenta   { id:string; nombre_cuenta:string; saldo_actual:number }
 
@@ -34,9 +34,13 @@ export default function Cuentas() {
   // Tarjeta
   const [showNewTar,   setShowNewTar]   = useState(false);
   const [editTar,      setEditTar]      = useState<Tarjeta|null>(null);
-  const [tarForm,      setTarForm]      = useState({ banco:'', nombre:'', linea:'', deuda:'' });
+  const [tarForm,      setTarForm]      = useState({ banco:'', nombre:'', linea:'', deuda:'', dia_cierre:'' });
   const [tarError,     setTarError]     = useState('');
   const [tarSaving,    setTarSaving]    = useState(false);
+
+  // Ciclo de facturación
+  const [gastosCiclo,   setGastosCiclo]  = useState<Record<string, { total:number; sincronizando:boolean }>>({});
+  const [cicloInputs,   setCicloInputs]  = useState<Record<string, { desde:string; hasta:string }>>({});
 
   // Préstamo
   const [showNewPre,   setShowNewPre]   = useState(false);
@@ -61,7 +65,7 @@ export default function Cuentas() {
         if (!user || !active) return;
         const [pRes, tarRes, preRes, cueRes] = await Promise.all([
           supabase.from('profiles').select('moneda_base').eq('id', user.id).single(),
-          supabase.from('tarjetas_credito').select('id,banco,nombre_tarjeta,deuda_actual,linea_credito').eq('user_id', user.id).order('creado_en', { ascending: true }),
+          supabase.from('tarjetas_credito').select('id,banco,nombre_tarjeta,deuda_actual,linea_credito,dia_cierre').eq('user_id', user.id).order('creado_en', { ascending: true }),
           supabase.from('prestamos').select('id,entidad_persona,tipo,saldo_pendiente,monto_mensual,cuotas_estimadas,cuotas_pagadas').eq('user_id', user.id).gt('saldo_pendiente', 0).order('creado_en', { ascending: true }),
           supabase.from('cuentas_ahorro').select('id,nombre_cuenta,saldo_actual').eq('user_id', user.id).order('creado_en', { ascending: true }),
         ]);
@@ -71,6 +75,18 @@ export default function Cuentas() {
         if (preRes.data) setPrestamos(preRes.data as Prestamo[]);
         if (cueRes.data) setCuentas(cueRes.data as Cuenta[]);
         setLoading(false);
+
+        // Inicializar inputs de ciclo con el mes actual para cada tarjeta
+        if (tarRes.data) {
+          const hoy    = new Date();
+          const defDesde = `01/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+          const defHasta = `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+          const inputs: Record<string, { desde:string; hasta:string }> = {};
+          for (const t of tarRes.data as Tarjeta[]) {
+            inputs[t.id] = { desde: defDesde, hasta: defHasta };
+          }
+          setCicloInputs(inputs);
+        }
       })();
       return () => { active = false; };
     }, [])
@@ -79,29 +95,94 @@ export default function Cuentas() {
   const sym = SYM[currency] ?? currency;
   const fmt = (n: number) => `${sym} ${n.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
+  // ── Ciclo facturación ──────────────────────────────────────────────────────
+
+  // Convierte DD/MM/AAAA → YYYY-MM-DD. Retorna null si formato inválido.
+  function parseDMY(s: string): string | null {
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(s.trim())) return null;
+    const [dd, mm, yyyy] = s.trim().split('/');
+    const d = parseInt(dd,10), m = parseInt(mm,10), y = parseInt(yyyy,10);
+    if (d<1||d>31||m<1||m>12||y<2020||y>2100) return null;
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  async function loadCicloCustom(tarjetaId: string, desdeInput: string, hastaInput: string) {
+    const desdeStr = parseDMY(desdeInput);
+    const hastaStr = parseDMY(hastaInput);
+    if (!desdeStr || !hastaStr) return;
+
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total: prev[tarjetaId]?.total ?? 0, sincronizando: true } }));
+
+    // Fix bug: incluye txs sin fecha explícita usando creado_en como fallback
+    const { data } = await supabase
+      .from('transacciones')
+      .select('monto,moneda,tipo_cambio')
+      .eq('tarjeta_id', tarjetaId)
+      .eq('metodo_pago', 'tarjeta')
+      .eq('activo', true)
+      .or(
+        `and(fecha.gte.${desdeStr},fecha.lt.${hastaStr}),` +
+        `and(fecha.is.null,creado_en.gte.${desdeStr}T00:00:00,creado_en.lt.${hastaStr}T00:00:00)`
+      );
+
+    const total = (data ?? []).reduce((sum, tx) => {
+      const m   = Number(tx.monto);
+      const mon = tx.moneda ?? 'PEN';
+      return sum + (mon === 'PEN' ? m : m * Number(tx.tipo_cambio ?? 1));
+    }, 0);
+
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total, sincronizando: false } }));
+  }
+
+  async function handleSyncDeudaCiclo(tar: Tarjeta) {
+    const ciclo = gastosCiclo[tar.id];
+    if (!ciclo || ciclo.sincronizando) return;
+    const nueva = ciclo.total;
+    await supabase.from('tarjetas_credito').update({ deuda_actual: nueva }).eq('id', tar.id);
+    setTarjetas(prev => prev.map(t => t.id === tar.id ? { ...t, deuda_actual: nueva } : t));
+  }
+
+  function setCicloInput(tarjetaId: string, field: 'desde'|'hasta', value: string) {
+    setCicloInputs(prev => ({ ...prev, [tarjetaId]: { ...prev[tarjetaId], [field]: value } }));
+  }
+
   // ── Tarjeta handlers
   const handleSaveTar = async () => {
     if (!tarForm.banco.trim())  { setTarError('Banco es requerido.'); return; }
     if (!tarForm.nombre.trim()) { setTarError('Nombre de tarjeta es requerido.'); return; }
+    const diaCierreRaw = parseInt(tarForm.dia_cierre.trim(), 10);
+    const diaCierre = !isNaN(diaCierreRaw) && diaCierreRaw >= 1 && diaCierreRaw <= 31 ? diaCierreRaw : null;
     setTarError(''); setTarSaving(true);
     const { data:{ user } } = await supabase.auth.getUser();
     if (!user) { setTarSaving(false); return; }
     if (editTar) {
       const linea = parseFloat(tarForm.linea) || 0;
       const deuda = parseFloat(tarForm.deuda) || 0;
-      await supabase.from('tarjetas_credito').update({ banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda }).eq('id', editTar.id);
-      setTarjetas(prev => prev.map(t => t.id === editTar.id ? { ...t, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda } : t));
+      await supabase.from('tarjetas_credito').update({ banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda, dia_cierre: diaCierre }).eq('id', editTar.id);
+      setTarjetas(prev => prev.map(t => t.id === editTar.id ? { ...t, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda, dia_cierre: diaCierre } : t));
       setEditTar(null);
     } else {
       const { data, error } = await supabase.from('tarjetas_credito').insert({
         user_id: user.id, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(),
         linea_credito: parseFloat(tarForm.linea) || 0, deuda_actual: parseFloat(tarForm.deuda) || 0,
-      }).select('id,banco,nombre_tarjeta,deuda_actual,linea_credito').single();
+        dia_cierre: diaCierre,
+      }).select('id,banco,nombre_tarjeta,deuda_actual,linea_credito,dia_cierre').single();
       if (error) { setTarError(error.message); setTarSaving(false); return; }
-      if (data) setTarjetas(prev => [...prev, data as Tarjeta]);
+      if (data) {
+        setTarjetas(prev => [...prev, data as Tarjeta]);
+        // Inicializar inputs de ciclo para la nueva tarjeta
+        const hoy = new Date();
+        setCicloInputs(prev => ({
+          ...prev,
+          [(data as Tarjeta).id]: {
+            desde: `01/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`,
+            hasta: `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`,
+          },
+        }));
+      }
       setShowNewTar(false);
     }
-    setTarForm({ banco:'', nombre:'', linea:'', deuda:'' });
+    setTarForm({ banco:'', nombre:'', linea:'', deuda:'', dia_cierre:'' });
     setTarSaving(false);
   };
 
@@ -159,7 +240,7 @@ export default function Cuentas() {
     setCueSaving(false);
   };
 
-  const openEditTar = (t: Tarjeta) => { setTarForm({ banco: t.banco, nombre: t.nombre_tarjeta, linea: String(Number(t.linea_credito)), deuda: String(Number(t.deuda_actual)) }); setTarError(''); setEditTar(t); };
+  const openEditTar = (t: Tarjeta) => { setTarForm({ banco: t.banco, nombre: t.nombre_tarjeta, linea: String(Number(t.linea_credito)), deuda: String(Number(t.deuda_actual)), dia_cierre: t.dia_cierre != null ? String(t.dia_cierre) : '' }); setTarError(''); setEditTar(t); };
   const openEditPre = (p: Prestamo) => { setPreForm({ entidad: p.entidad_persona, tipo: p.tipo, monto_total: '', saldo: String(Number(p.saldo_pendiente)), mensual: String(Number(p.monto_mensual)) }); setPreError(''); setEditPre(p); };
   const openEditCue = (c: Cuenta)   => { setCueForm({ nombre: c.nombre_cuenta, saldo: String(Number(c.saldo_actual)) }); setCueError(''); setEditCue(c); };
 
@@ -224,6 +305,7 @@ export default function Cuentas() {
               const color = bankColor(t.banco);
               const disp  = Math.max(0, Number(t.linea_credito) - Number(t.deuda_actual));
               const pct   = Number(t.linea_credito) > 0 ? Math.min(Number(t.deuda_actual) / Number(t.linea_credito), 1) : 0;
+              const ciclo = gastosCiclo[t.id];
               return (
                 <View key={t.id}>
                   <View style={styles.tarjetaCard}>
@@ -244,7 +326,84 @@ export default function Cuentas() {
                       <Text style={styles.editBtnText}>✎</Text>
                     </TouchableOpacity>
                   </View>
-                  {i < tarjetas.length - 1 && <View style={styles.rowSep} />}
+
+                  {/* ── Consolidado de ciclo (manual) ── */}
+                  {(() => {
+                    const inputs = cicloInputs[t.id] ?? { desde:'', hasta:'' };
+                    const canCalc = !!parseDMY(inputs.desde) && !!parseDMY(inputs.hasta);
+                    return (
+                      <View style={styles.cicloBox}>
+                        <Text style={styles.cicloTitle}>CONSOLIDADO DE CICLO</Text>
+                        <View style={styles.cicloRow}>
+                          <View style={styles.cicloField}>
+                            <Text style={styles.cicloFieldLabel}>Desde</Text>
+                            <TextInput
+                              style={styles.cicloInput}
+                              value={inputs.desde}
+                              onChangeText={v => {
+                                const digits = v.replace(/\D/g,'').slice(0,8);
+                                let out = digits;
+                                if (digits.length>=5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
+                                else if (digits.length>=3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
+                                setCicloInput(t.id,'desde',out);
+                              }}
+                              placeholder="DD/MM/AAAA"
+                              placeholderTextColor="#9CA3AF"
+                              keyboardType="numeric"
+                              maxLength={10}
+                            />
+                          </View>
+                          <View style={styles.cicloField}>
+                            <Text style={styles.cicloFieldLabel}>Hasta</Text>
+                            <TextInput
+                              style={styles.cicloInput}
+                              value={inputs.hasta}
+                              onChangeText={v => {
+                                const digits = v.replace(/\D/g,'').slice(0,8);
+                                let out = digits;
+                                if (digits.length>=5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
+                                else if (digits.length>=3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
+                                setCicloInput(t.id,'hasta',out);
+                              }}
+                              placeholder="DD/MM/AAAA"
+                              placeholderTextColor="#9CA3AF"
+                              keyboardType="numeric"
+                              maxLength={10}
+                            />
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.cicloCalcBtn, !canCalc && { opacity:0.4 }]}
+                            onPress={() => canCalc && loadCicloCustom(t.id, inputs.desde, inputs.hasta)}
+                            disabled={!canCalc}
+                          >
+                            <Text style={styles.cicloCalcText}>Calcular</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {ciclo ? (
+                          ciclo.sincronizando ? (
+                            <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginTop:8 }}>
+                              <ActivityIndicator size="small" color="#DC2626" />
+                              <Text style={styles.cicloSub}>Calculando…</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.cicloResult}>
+                              <View>
+                                <Text style={styles.cicloTotal}>{fmt(ciclo.total)}</Text>
+                                <Text style={styles.cicloSub}>Total de gastos con esta tarjeta</Text>
+                              </View>
+                              <TouchableOpacity style={styles.cicloBtn} onPress={() => handleSyncDeudaCiclo(t)}>
+                                <Text style={styles.cicloBtnText}>Actualizar{'\n'}deuda</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )
+                        ) : (
+                          <Text style={[styles.cicloSub, { marginTop:6 }]}>Ingresa un rango y toca Calcular</Text>
+                        )}
+                      </View>
+                    );
+                  })()}
+
+                  {i < tarjetas.length - 1 && <View style={[styles.rowSep, { marginTop: 8 }]} />}
                 </View>
               );
             })}
@@ -362,6 +521,16 @@ export default function Cuentas() {
                   </View>
                 ) : null;
               })()}
+              <Text style={styles.mLabel}>Día de cierre de ciclo <Text style={{ fontWeight:'400', color:'#9CA3AF' }}>(opcional, 1–31)</Text></Text>
+              <TextInput
+                style={styles.mInput}
+                keyboardType="number-pad"
+                placeholder="Ej: 7  (si tu tarjeta cierra el día 7)"
+                placeholderTextColor="#9CA3AF"
+                maxLength={2}
+                value={tarForm.dia_cierre}
+                onChangeText={v => setTarForm(s => ({ ...s, dia_cierre: v.replace(/\D/g,'').slice(0,2) }))}
+              />
               {!!tarError && <Text style={styles.formError}>{tarError}</Text>}
               <TouchableOpacity style={[styles.formSaveBtn, tarSaving && { opacity:0.6 }]} onPress={handleSaveTar} disabled={tarSaving}>
                 {tarSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.formSaveText}>{editTar ? 'Guardar cambios' : 'Crear Tarjeta'}</Text>}
@@ -479,6 +648,20 @@ const styles = StyleSheet.create({
 
   editBtn:     { width:32, height:32, borderRadius:8, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', flexShrink:0 },
   editBtnText: { fontSize:15, color:'#6B7280' },
+
+  cicloBox:        { backgroundColor:'#FFF7F7', borderRadius:10, padding:10, marginBottom:8 },
+  cicloTitle:      { fontSize:10, fontWeight:'700', color:'#DC2626', textTransform:'uppercase', letterSpacing:0.5, marginBottom:8 },
+  cicloRow:        { flexDirection:'row', alignItems:'flex-end', gap:6 },
+  cicloField:      { flex:1 },
+  cicloFieldLabel: { fontSize:10, fontWeight:'600', color:'#6B7280', marginBottom:3 },
+  cicloInput:      { height:36, backgroundColor:'#fff', borderWidth:1, borderColor:'#FCA5A5', borderRadius:8, paddingHorizontal:8, fontSize:12, color:'#111827' },
+  cicloCalcBtn:    { height:36, backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, justifyContent:'center', alignItems:'center' },
+  cicloCalcText:   { fontSize:12, fontWeight:'700', color:'#fff' },
+  cicloResult:     { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:10 },
+  cicloTotal:      { fontSize:18, fontWeight:'800', color:'#111827' },
+  cicloSub:        { fontSize:10, color:'#9CA3AF', marginTop:1 },
+  cicloBtn:        { backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, paddingVertical:7, alignItems:'center' },
+  cicloBtnText:    { fontSize:10, fontWeight:'700', color:'#fff', textAlign:'center' },
 
   fab:     { position:'absolute', bottom:24, right:20, width:56, height:56, borderRadius:28,
              backgroundColor:'#3B82F6', justifyContent:'center', alignItems:'center',

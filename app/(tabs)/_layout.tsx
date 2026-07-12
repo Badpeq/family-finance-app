@@ -1,11 +1,16 @@
 import { Tabs } from 'expo-router';
-import { Platform, Text } from 'react-native';
+import { Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-function Icon({ glyph, focused }: { glyph: string; focused: boolean }) {
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+
+function TabIcon({ name, focused }: { name: IoniconsName; focused: boolean }) {
   return (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.45, lineHeight: 24 }}>
-      {glyph}
-    </Text>
+    <Ionicons
+      name={focused ? name : (`${name}-outline` as IoniconsName)}
+      size={24}
+      color={focused ? '#3B82F6' : '#9CA3AF'}
+    />
   );
 }
 
@@ -18,61 +23,58 @@ export default function TabsLayout() {
           backgroundColor: '#fff',
           borderTopColor: '#F3F4F6',
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 84 : 64,
+          height: Platform.OS === 'ios' ? 88 : 68,
           paddingBottom: Platform.OS === 'ios' ? 24 : 10,
-          paddingTop: 8,
-          elevation: 12,
+          paddingTop: 6,
+          elevation: 8,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
+          shadowOpacity: 0.05,
+          shadowRadius: 6,
         },
-        tabBarActiveTintColor: '#3B82F6',
+        tabBarActiveTintColor:   '#3B82F6',
         tabBarInactiveTintColor: '#9CA3AF',
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 11,
           fontWeight: '600',
           marginTop: 2,
-          includeFontPadding: false,
         },
-        tabBarItemStyle: {
-          paddingHorizontal: 2,
-        },
+        tabBarItemStyle: { paddingHorizontal: 2 },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Inicio',
-          tabBarIcon: ({ focused }) => <Icon glyph="🏠" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="home" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="transacciones"
         options={{
           title: 'Movimientos',
-          tabBarIcon: ({ focused }) => <Icon glyph="📊" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="swap-horizontal" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="analisis"
         options={{
           title: 'Análisis',
-          tabBarIcon: ({ focused }) => <Icon glyph="📈" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="bar-chart" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="cuentas"
         options={{
           title: 'Cuentas',
-          tabBarIcon: ({ focused }) => <Icon glyph="💼" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="wallet" focused={focused} />,
         }}
       />
       <Tabs.Screen
         name="mas"
         options={{
           title: 'Config',
-          tabBarIcon: ({ focused }) => <Icon glyph="⚙️" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="settings" focused={focused} />,
         }}
       />
     </Tabs>

@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useAutoApplyCommitments } from '@/hooks/useAutoApplyCommitments';
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
+
+  useAutoApplyCommitments();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
