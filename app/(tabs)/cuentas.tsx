@@ -40,7 +40,7 @@ export default function Cuentas() {
   const [tarSaving,    setTarSaving]    = useState(false);
 
   // Ciclo de facturación
-  const [gastosCiclo,   setGastosCiclo]  = useState<Record<string, { total:number; sincronizando:boolean }>>({});
+  const [gastosCiclo,   setGastosCiclo]  = useState<Record<string, { total:number; proyectado:number; sincronizando:boolean }>>({});
   const [cicloInputs,   setCicloInputs]  = useState<Record<string, { desde:string; hasta:string }>>({});
 
   // Préstamo
@@ -103,30 +103,53 @@ export default function Cuentas() {
 
   async function loadCicloCustom(tarjetaId: string, desdeInput: string, hastaInput: string) {
     if (!desdeInput || !hastaInput) return;
-    const desdeStr = desdeInput;
-    const hastaStr = hastaInput;
 
-    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total: prev[tarjetaId]?.total ?? 0, sincronizando: true } }));
+    setGastosCiclo(prev => ({
+      ...prev,
+      [tarjetaId]: { total: prev[tarjetaId]?.total ?? 0, proyectado: prev[tarjetaId]?.proyectado ?? 0, sincronizando: true },
+    }));
 
-    // Fix bug: incluye txs sin fecha explícita usando creado_en como fallback
+    // tarjeta_id + tipo='gasto' + activo=true es el filtro correcto.
+    // metodo_pago NO debe filtrarse aquí: transacciones insertadas por trigger
+    // pueden tener metodo_pago='efectivo' aunque estén vinculadas a tarjeta_id.
+    // OR de fecha: captura txs antiguas sin fecha explícita usando creado_en.
     const { data } = await supabase
       .from('transacciones')
-      .select('monto,moneda,tipo_cambio')
+      .select('monto,moneda,tipo_cambio,gastos_recurrentes_id,es_gasto_unico')
       .eq('tarjeta_id', tarjetaId)
-      .eq('metodo_pago', 'tarjeta')
+      .eq('tipo', 'gasto')
       .eq('activo', true)
       .or(
-        `and(fecha.gte.${desdeStr},fecha.lt.${hastaStr}),` +
-        `and(fecha.is.null,creado_en.gte.${desdeStr}T00:00:00,creado_en.lt.${hastaStr}T00:00:00)`
+        `and(fecha.gte.${desdeInput},fecha.lt.${hastaInput}),` +
+        `and(fecha.is.null,creado_en.gte.${desdeInput}T00:00:00,creado_en.lt.${hastaInput}T00:00:00)`
       );
 
-    const total = (data ?? []).reduce((sum, tx) => {
-      const m   = Number(tx.monto);
-      const mon = tx.moneda ?? 'PEN';
-      return sum + (mon === 'PEN' ? m : m * Number(tx.tipo_cambio ?? 1));
-    }, 0);
+    const txs = data ?? [];
 
-    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total, sincronizando: false } }));
+    const toPEN = (tx: typeof txs[0]) => {
+      const m = Number(tx.monto);
+      return (tx.moneda ?? 'PEN') === 'PEN' ? m : m * Number(tx.tipo_cambio ?? 1);
+    };
+
+    // Separación estricta: fijos (recurrentes) nunca entran al run-rate.
+    const expensesFijos  = txs.filter(tx => tx.gastos_recurrentes_id !== null).reduce((s, tx) => s + toPEN(tx), 0);
+    const expensesUnicos = txs.filter(tx => tx.es_gasto_unico && tx.gastos_recurrentes_id === null).reduce((s, tx) => s + toPEN(tx), 0);
+    const expensesVar    = txs.filter(tx => tx.gastos_recurrentes_id === null && !tx.es_gasto_unico).reduce((s, tx) => s + toPEN(tx), 0);
+
+    const total = expensesFijos + expensesUnicos + expensesVar;
+
+    // Run-rate: solo gasto variable diario × días restantes del ciclo.
+    const hoy    = new Date();
+    const desde  = new Date(desdeInput + 'T12:00:00');
+    const hasta  = new Date(hastaInput + 'T12:00:00');
+    const dayMs  = 86_400_000;
+    const diasTranscurridos = Math.max(1, Math.ceil((Math.min(hoy.getTime(), hasta.getTime()) - desde.getTime()) / dayMs));
+    const diasRestantes     = Math.max(0, Math.ceil((hasta.getTime() - hoy.getTime()) / dayMs));
+    const dailyRate         = expensesVar / diasTranscurridos;
+    // Fijos y únicos se suman a valor nominal completo; solo variable se proyecta.
+    const proyectado = expensesFijos + expensesUnicos + expensesVar + dailyRate * diasRestantes;
+
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total, proyectado, sincronizando: false } }));
   }
 
   async function handleSyncDeudaCiclo(tar: Tarjeta) {
@@ -165,14 +188,13 @@ export default function Cuentas() {
       if (error) { setTarError(error.message); setTarSaving(false); return; }
       if (data) {
         setTarjetas(prev => [...prev, data as Tarjeta]);
-        // Inicializar inputs de ciclo para la nueva tarjeta
         const hoy = new Date();
+        const yy  = hoy.getFullYear();
+        const mm  = String(hoy.getMonth() + 1).padStart(2, '0');
+        const dd  = String(hoy.getDate()).padStart(2, '0');
         setCicloInputs(prev => ({
           ...prev,
-          [(data as Tarjeta).id]: {
-            desde: `01/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`,
-            hasta: `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`,
-          },
+          [(data as Tarjeta).id]: { desde: `${yy}-${mm}-01`, hasta: `${yy}-${mm}-${dd}` },
         }));
       }
       setShowNewTar(false);
@@ -362,9 +384,17 @@ export default function Cuentas() {
                             </View>
                           ) : (
                             <View style={styles.cicloResult}>
-                              <View>
+                              <View style={{ flex:1 }}>
                                 <Text style={styles.cicloTotal}>{fmt(ciclo.total)}</Text>
-                                <Text style={styles.cicloSub}>Total de gastos con esta tarjeta</Text>
+                                <Text style={styles.cicloSub}>Gastado en el ciclo</Text>
+                                {ciclo.proyectado > ciclo.total + 0.01 && (
+                                  <>
+                                    <Text style={[styles.cicloTotal, { fontSize:14, color:'#DC2626', marginTop:6 }]}>
+                                      {fmt(ciclo.proyectado)}
+                                    </Text>
+                                    <Text style={styles.cicloSub}>Proyectado al cierre (fijos + run-rate var.)</Text>
+                                  </>
+                                )}
                               </View>
                               <TouchableOpacity style={styles.cicloBtn} onPress={() => handleSyncDeudaCiclo(t)}>
                                 <Text style={styles.cicloBtnText}>Actualizar{'\n'}deuda</Text>

@@ -1,8 +1,8 @@
 # Documento de Diseño Técnico
 ## Family Finance App — Replicación e Implementación
 
-**Versión:** 1.0  
-**Fecha:** 2026-06-27  
+**Versión:** 2.0  
+**Fecha:** 2026-07-12  
 **Dirigido a:** Desarrolladores y Arquitectos de Software  
 **Stack:** React Native + Expo SDK 56 + Supabase + Vercel
 
@@ -23,17 +23,26 @@ Este documento describe la implementación técnica completa de Family Finance A
   "dependencies": {
     "expo": "~56.0.9",
     "expo-router": "~56.2.9",
-    "react-native": "0.79.5",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-web": "^0.21.2",
     "@supabase/supabase-js": "^2.107.0",
     "react-native-svg": "15.15.4",
     "@expo/vector-icons": "^15.0.2",
+    "@react-native-community/datetimepicker": "9.1.0",
     "expo-sqlite": "~56.0.4",
-    "expo-notifications": "~0.29.0",
-    "expo-image-picker": "~16.0.0",
-    "expo-file-system": "~18.0.0"
+    "expo-notifications": "~56.0.16",
+    "expo-constants": "~56.0.17",
+    "expo-linking": "~56.0.13",
+    "expo-status-bar": "~56.0.4",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2"
   }
 }
 ```
+
+> **Nota:** `@react-native-community/datetimepicker` se usa solo en iOS/Android. En web se importa via `require()` condicional dentro de `DatePickerNative` para evitar errores en el bundle web.
 
 ### Configuración de Expo Router (`app.json`)
 
@@ -181,6 +190,7 @@ CREATE TABLE tarjetas_credito (
   deuda_actual NUMERIC(12,2) DEFAULT 0,
   fecha_corte INTEGER,
   fecha_pago INTEGER,
+  dia_cierre INTEGER CHECK (dia_cierre BETWEEN 1 AND 31), -- V9: día de cierre del ciclo
   moneda VARCHAR(3) DEFAULT 'PEN',
   activo BOOLEAN DEFAULT true
 );
@@ -342,39 +352,53 @@ SELECT
 FROM categorias_personalizadas cp
 WHERE cp.user_id = auth.uid();
 
--- Vista de compromisos del mes actual
+-- Vista de compromisos del mes actual (V9 — aplicado dinámico vía EXISTS)
 -- Crear en Supabase Dashboard con security_invoker = true
-CREATE VIEW v_gastos_programados_mes AS
+-- IMPORTANTE: en gastos_recurrentes la columna es 'activo' (no 'aplicado')
+-- IMPORTANTE: en compras_cuotas la columna es 'cuota_actual' (no 'cuotas_pagadas')
+CREATE VIEW public.v_gastos_programados_mes
+WITH (security_invoker = true) AS
 SELECT
   gr.id,
-  gr.user_id,
+  'recurrente'::TEXT                AS tipo_programado,
   gr.descripcion,
   gr.categoria,
-  gr.monto,
+  gr.monto                          AS monto_cuota,
   gr.dia_cobro,
-  'recurrente' AS tipo,
-  gr.aplicado
-FROM gastos_recurrentes gr
-WHERE gr.user_id = auth.uid()
-  AND (gr.mes_fin IS NULL OR gr.mes_fin >= date_trunc('month', CURRENT_DATE))
-  AND gr.mes_inicio <= date_trunc('month', CURRENT_DATE)
+  EXISTS (
+    SELECT 1
+    FROM public.transacciones t
+    WHERE t.gastos_recurrentes_id = gr.id
+      AND t.activo = true
+      AND t.fecha >= date_trunc('month', CURRENT_DATE)::date
+      AND t.fecha  < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date
+  )                                 AS aplicado
+FROM public.gastos_recurrentes gr
+WHERE gr.user_id   = auth.uid()
+  AND gr.activo    = true
+  AND gr.mes_inicio <= date_trunc('month', CURRENT_DATE)::date
+  AND (gr.mes_fin IS NULL OR gr.mes_fin >= date_trunc('month', CURRENT_DATE)::date)
+
 UNION ALL
+
 SELECT
   cc.id,
-  cc.user_id,
+  'cuota'::TEXT                     AS tipo_programado,
   cc.descripcion,
   cc.categoria,
-  cc.monto_cuota AS monto,
+  cc.monto_cuota,
   cc.dia_cobro,
-  'cuota' AS tipo,
-  (cc.cuotas_pagadas >= (
-    EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM cc.mes_inicio)
-  ) * 12 + EXTRACT(MONTH FROM CURRENT_DATE) - EXTRACT(MONTH FROM cc.mes_inicio)) AS aplicado
-FROM compras_cuotas cc
-WHERE cc.user_id = auth.uid()
-  AND cc.activo = true
+  -- aplicado si cuota_actual >= número de cuota esperado este mes
+  (
+    cc.cuota_actual >= (
+      (EXTRACT(YEAR  FROM CURRENT_DATE) - EXTRACT(YEAR  FROM cc.mes_inicio)) * 12 +
+       EXTRACT(MONTH FROM CURRENT_DATE) - EXTRACT(MONTH FROM cc.mes_inicio)
+    )
+  )                                 AS aplicado
+FROM public.compras_cuotas cc
+WHERE cc.user_id    = auth.uid()
   AND cc.mes_inicio <= CURRENT_DATE
-  AND cc.cuotas_pagadas < cc.total_cuotas;
+  AND cc.cuota_actual < cc.total_cuotas;
 ```
 
 ### 4.4 Función RPC: Termómetro de Deuda
@@ -430,6 +454,77 @@ BEGIN
   ORDER BY COALESCE(r.total, 0) DESC;
 END;
 $$;
+```
+
+### 4.5 Función RPC: Auto-aplicar Gastos Recurrentes (V9)
+
+```sql
+-- Idempotente: no crea duplicados si ya existe transacción en el mes.
+-- Llamar desde el frontend al montar Dashboard o Compromisos.
+CREATE OR REPLACE FUNCTION public.fn_auto_apply_recurrentes(p_user_id UUID)
+RETURNS INTEGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_inserted INTEGER := 0;
+  r          RECORD;
+  v_mes_ini  DATE := date_trunc('month', CURRENT_DATE)::DATE;
+  v_mes_fin  DATE := (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::DATE;
+BEGIN
+  FOR r IN
+    SELECT gr.id, gr.monto, gr.categoria, gr.descripcion, gr.dia_cobro
+    FROM public.gastos_recurrentes gr
+    WHERE gr.user_id    = p_user_id
+      AND gr.activo     = true
+      AND gr.mes_inicio <= v_mes_ini
+      AND (gr.mes_fin IS NULL OR gr.mes_fin >= v_mes_ini)
+      AND gr.dia_cobro  <= EXTRACT(DAY FROM CURRENT_DATE)
+      AND NOT EXISTS (
+        SELECT 1 FROM public.transacciones t
+        WHERE t.gastos_recurrentes_id = gr.id
+          AND t.activo = true
+          AND t.fecha >= v_mes_ini AND t.fecha < v_mes_fin
+      )
+  LOOP
+    INSERT INTO public.transacciones (
+      user_id, tipo, monto, categoria, descripcion,
+      metodo_pago, fecha, moneda, tipo_cambio, es_gasto_unico,
+      gastos_recurrentes_id, fuente, activo
+    ) VALUES (
+      p_user_id, 'gasto', r.monto, r.categoria, r.descripcion,
+      'efectivo',
+      LEAST(
+        (v_mes_ini + (r.dia_cobro - 1) * INTERVAL '1 day')::DATE,
+        (v_mes_fin  - INTERVAL '1 day')::DATE
+      ),
+      'PEN', 1.0, false, r.id, 'auto_recurrente', true
+    );
+    v_inserted := v_inserted + 1;
+  END LOOP;
+  RETURN v_inserted;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_auto_apply_recurrentes(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_auto_apply_recurrentes(UUID) TO authenticated;
+```
+
+**Uso desde el frontend:**
+
+```typescript
+// src/hooks/useAutoApplyCommitments.ts
+import { useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+
+export function useAutoApplyCommitments() {
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.rpc('fn_auto_apply_recurrentes', { p_user_id: user.id });
+    })();
+  }, []); // Solo al montar
+}
 ```
 
 ---
@@ -663,7 +758,86 @@ const valores = [1200, 1500, 1100, 1800, 1650, 1400];
 />
 ```
 
-### 6.5 `useCategorias` — uso
+### 6.5 `DatePickerInput` — componente de selección de fecha (V2)
+
+Componente único (`src/components/DatePickerInput.tsx`) que adapta el picker de fecha a la plataforma.
+
+```typescript
+// Props
+interface Props {
+  value: string;           // YYYY-MM-DD (vacío = sin selección)
+  onChange: (iso: string) => void;
+  inputStyle?: object;
+  placeholder?: string;
+}
+
+// Uso
+import { DatePickerInput } from '@/components/DatePickerInput';
+
+<DatePickerInput
+  value={fecha}              // estado en ISO YYYY-MM-DD
+  onChange={setFecha}
+  inputStyle={styles.input}
+  placeholder="Seleccionar fecha"
+/>
+```
+
+**Implementación por plataforma:**
+- **Web** (`Platform.OS === 'web'`): renderiza `<input type="date">` HTML nativo con estilos inline que replican el design token del formulario
+- **Native** (iOS/Android): renderiza un `TouchableOpacity` con la fecha en DD/MM/YYYY; al tocar abre `DateTimePicker` de `@react-native-community/datetimepicker` con `display="spinner"` y `locale="es-PE"`
+- **Importante:** el `require('@react-native-community/datetimepicker')` está dentro del componente nativo para que Metro no lo incluya en el bundle web
+
+**Archivos que usan `DatePickerInput`:**
+- `app/(tabs)/cuentas.tsx` — ciclo Desde/Hasta por tarjeta
+- `src/components/TransactionsList.tsx` — edición inline de fecha
+- `app/pagos.tsx` — fecha del pago
+- `app/prestamos.tsx` — fecha del abono
+- `app/importar.tsx` — fecha de la transacción importada
+
+### 6.6 Patrón OR para `fecha` nula en consultas de ciclo
+
+Algunas transacciones antiguas tienen `fecha = NULL` y dependen de `creado_en`. Para no perder esas filas en las consultas de rango:
+
+```typescript
+// En cuentas.tsx — loadCicloCustom
+const { data } = await supabase
+  .from('transacciones')
+  .select('*')
+  .eq('user_id', userId)
+  .eq('tipo', 'gasto')
+  .eq('activo', true)
+  .or(
+    `and(fecha.gte.${desdeStr},fecha.lt.${hastaStr}),` +
+    `and(fecha.is.null,creado_en.gte.${desdeStr},creado_en.lt.${hastaStr})`
+  );
+```
+
+### 6.7 Fórmula de run-rate para proyección de ciclo
+
+```typescript
+// Separar fijos (recurrentes) de variables (resto)
+const expensesFijos = gastos
+  .filter(g => g.gastos_recurrentes_id !== null)
+  .reduce((s, g) => s + toMoneda(g), 0);
+
+const expensesVar = gastos
+  .filter(g => g.gastos_recurrentes_id === null && !g.es_gasto_unico)
+  .reduce((s, g) => s + toMoneda(g), 0);
+
+const expensesUnicos = gastos
+  .filter(g => g.es_gasto_unico)
+  .reduce((s, g) => s + toMoneda(g), 0);
+
+const diasTranscurridos = Math.max(1, daysBetween(desde, hoy));
+const diasRestantes = Math.max(0, daysBetween(hoy, hasta));
+const dailyRate = expensesVar / diasTranscurridos;
+
+const proyectado = (dailyRate * diasRestantes) + expensesFijos + expensesUnicos + pendingCommits;
+```
+
+Los gastos fijos (`gastos_recurrentes_id IS NOT NULL`) tienen monto definido — proyectarlos con run-rate los doblaría incorrectamente.
+
+### 6.8 `useCategorias` — uso
 
 ```typescript
 import { useCategorias, iconForCat } from '@/hooks/useCategorias';
@@ -679,7 +853,7 @@ function PickerCategorias() {
 }
 ```
 
-### 6.6 Patrón de transacciones cancelables (`compromisos.tsx`)
+### 6.9 Patrón de transacciones cancelables (`compromisos.tsx`)
 
 Los gastos recurrentes que el usuario anula en la vista se guardan en un `Set` module-level para que persistan entre re-mounts:
 
@@ -783,7 +957,57 @@ export async function getTodayRate(): Promise<{ compra: number; venta: number }>
 
 ---
 
-## 9. Deploy
+## 9. WhatsApp Webhook (Supabase Edge Function)
+
+Módulo V8 para auto-captura de comprobantes Yape/Plin desde WhatsApp.
+
+### Estructura
+
+```
+supabase/functions/whatsapp-webhook/
+├── index.ts          # Entry point: webhook Meta → validación HMAC → orquestación
+├── providers.ts      # Adaptador Meta Cloud API: parse de mensaje, download media, reply
+├── parseImage.ts     # Claude claude-haiku-4-5-20251001 visión → JSON { monto, operacion_id, descripcion, tipo }
+└── deno.json         # Import map Deno (esm.sh)
+```
+
+### Flujo técnico
+
+```
+Meta Cloud API (POST /whatsapp-webhook)
+  ↓ Validar HMAC-SHA256 con WHATSAPP_SECRET
+providers.ts: parsear mensaje → extraer media_id
+  ↓ Descargar imagen desde Meta Graph API
+parseImage.ts: enviar a Claude haiku visión → JSON
+  ↓ { monto, operacion_id, descripcion, tipo: 'yape'|'plin' }
+Buscar usuario por telefono_whatsapp en profiles
+  ↓
+INSERT en transacciones:
+  { monto, categoria: 'Por clasificar', fuente: 'whatsapp_yape'|'whatsapp_plin',
+    operacion_id, descripcion, activo: true }
+ON CONFLICT (user_id, operacion_id) DO NOTHING  ← idempotencia
+```
+
+### Variables de entorno (Supabase Edge Function)
+
+```bash
+WHATSAPP_TOKEN=<Meta access token>
+WHATSAPP_SECRET=<App secret para HMAC>
+WHATSAPP_PHONE_ID=<ID del número de WhatsApp Business>
+ANTHROPIC_API_KEY=<API key de Anthropic>
+SUPABASE_URL=<url del proyecto>
+SUPABASE_SERVICE_ROLE_KEY=<service role key>  # necesario para saltar RLS
+```
+
+### Deploy de Edge Function
+
+```bash
+supabase functions deploy whatsapp-webhook --project-ref tsdawpxiqqnesikcqlex
+```
+
+---
+
+## 10. Deploy
 
 ### Vercel (`vercel.json`)
 
@@ -873,15 +1097,17 @@ CREATE POLICY "authenticated_update" ON tipos_cambio FOR UPDATE
 ## 11. Guía de Replicación (Paso a Paso)
 
 ### Paso 1: Supabase
-1. Crear proyecto en [supabase.com](https://supabase.com)
-2. Ejecutar SQLs en este orden:
+1. Crear proyecto en [supabase.com](https://supabase.com) — ref del proyecto actual: `tsdawpxiqqnesikcqlex`
+2. Ejecutar SQLs en este orden en el SQL Editor:
    - `migration_deploy.sql`
    - `migration_v2.sql` → `migration_v2_patch.sql` → `migration_v2_patch2.sql`
    - `migration_v3.sql` → `migration_v3_patch.sql`
    - `migration_v4.sql` → `migration_v5.sql` → `migration_v6.sql` → `migration_v7.sql`
-3. Crear vistas `v_categorias` y `v_gastos_programados_mes` en SQL Editor con `security_invoker = true`
-4. Crear función `fn_deuda_capas` en SQL Editor
-5. Copiar `URL` y `anon key` del proyecto
+   - `migration_v8.sql` ← WhatsApp: `telefono_whatsapp` en profiles + `operacion_id` en transacciones
+   - `migration_v9.sql` ← V2 avanzado: vista `v_gastos_programados_mes` con `aplicado` dinámico + `fn_auto_apply_recurrentes` + `dia_cierre` en tarjetas
+3. Crear vista `v_categorias` en SQL Editor con `security_invoker = true`
+   > Nota: `v_gastos_programados_mes` y `fn_deuda_capas` y `fn_auto_apply_recurrentes` ya están en los archivos de migración
+4. Copiar `URL` y `anon key` del proyecto
 
 ### Paso 2: Google Vision API (para OCR)
 1. Crear proyecto en Google Cloud Console
@@ -894,7 +1120,8 @@ CREATE POLICY "authenticated_update" ON tipos_cambio FOR UPDATE
 npx create-expo-app family-finance-app --template tabs
 cd family-finance-app
 npx expo install @supabase/supabase-js expo-sqlite react-native-svg \
-  @expo/vector-icons expo-notifications expo-image-picker expo-file-system
+  @expo/vector-icons expo-notifications expo-image-picker expo-file-system \
+  @react-native-community/datetimepicker
 ```
 
 ### Paso 4: Variables de entorno
@@ -906,17 +1133,28 @@ EXPO_PUBLIC_GOOGLE_VISION_KEY=<vision-api-key>
 EXPO_PUBLIC_GOOGLE_SHEET_URL=<url-hoja-tipo-cambio>  # opcional
 ```
 
-### Paso 5: Deploy
+### Paso 5: WhatsApp webhook (opcional)
+```bash
+# Variables en Supabase Edge Functions
+supabase secrets set WHATSAPP_TOKEN=... WHATSAPP_SECRET=... \
+  WHATSAPP_PHONE_ID=... ANTHROPIC_API_KEY=... \
+  --project-ref <tu-proyecto-ref>
+
+# Deploy
+supabase functions deploy whatsapp-webhook --project-ref <tu-proyecto-ref>
+```
+
+### Paso 6: Deploy web
 ```bash
 # Instalar Vercel CLI
 npm i -g vercel
 
-# Login
+# Login y deploy
 vercel login
-
-# Deploy
-vercel --prod
+vercel --prod --yes
 ```
+
+**URL de producción actual:** https://family-finance-app-ruby.vercel.app
 
 ---
 
@@ -932,3 +1170,17 @@ vercel --prod
 | Pre-conversión en frontend | Trigger de conversión en DB | Los triggers no tienen acceso a la tasa del día sin llamada externa; más simple y trazable en el cliente |
 | `activo = false` en lugar de DELETE | DELETE físico | Permite auditoría, recuperación de errores y reversión de efectos secundarios vía trigger |
 | `SECURITY DEFINER` en triggers | `SECURITY INVOKER` | `auth.uid()` devuelve NULL en contexto server-side de trigger; DEFINER corre como owner del schema |
+| `aplicado` dinámico en vista V9 | Columna `aplicado` en `gastos_recurrentes` | La columna booleana en la tabla necesitaba UPDATE manual y podía quedar dessincronizada; el EXISTS en la vista es siempre correcto |
+| `require()` condicional para DateTimePicker | Archivos `.web.tsx`/`.native.tsx` | TypeScript no resuelve automáticamente platform suffixes sin un archivo base; un único archivo con `Platform.OS` es más simple |
+| Separar `expensesFijos` del run-rate | Un solo run-rate diario para todo | Los gastos recurrentes tienen monto definido — incluirlos en el promedio diario y luego proyectar los duplicaría en la proyección |
+| Claude haiku para parsing WhatsApp | RegEx / parser determinístico | Los comprobantes Yape/Plin varían en formato; visión AI es más robusta ante variaciones de layout |
+| `operacion_id` UNIQUE por user en transacciones | Deduplicar en Edge Function | Garantía de idempotencia en DB aunque el webhook se llame dos veces por el mismo comprobante |
+
+---
+
+## 13. Historial de Versiones del Documento
+
+| Versión | Fecha | Cambios |
+|---|---|---|
+| 1.0 | 2026-06-27 | Documento inicial — stack, SQL completo V1-V7, triggers, patrones frontend, OCR, tipo de cambio, deploy, RLS, guía de replicación |
+| 2.0 | 2026-07-12 | Dependencias actualizadas (react-native 0.85.3, @react-native-community/datetimepicker 9.1.0), `v_gastos_programados_mes` V9 con `aplicado` dinámico, `fn_auto_apply_recurrentes` RPC (§4.5), `dia_cierre` en `tarjetas_credito`, sección WhatsApp webhook (§9), `DatePickerInput` component (§6.5), OR filter para `fecha` nula (§6.6), fórmula run-rate fijos vs. variables (§6.7), guía de replicación actualizada con migration_v8/v9, URL de producción, nuevas decisiones técnicas |

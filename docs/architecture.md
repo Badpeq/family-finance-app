@@ -1,5 +1,5 @@
 # Arquitectura: Family Finance App
-**Versión:** V8 (WhatsApp Yape/Plin automático) · **Última actualización:** 2026-06-27 · **Rama activa:** `v2-advanced`
+**Versión:** V9 (Ciclo facturación + auto-apply recurrentes + DatePickerInput) · **Última actualización:** 2026-07-12 · **Rama activa:** `main` (producción) / `v2-advanced` (desarrollo)
 
 ---
 
@@ -13,6 +13,7 @@
 | Estilos | React Native StyleSheet | — | Sin Tailwind/NativeWind; estilos inline tipados |
 | Animaciones | React Native Animated API | — | Sin Framer Motion (web-only) |
 | Gráficos | react-native-svg | 15.15.4 | Sparklines SVG en pestaña Análisis |
+| Date Picker | @react-native-community/datetimepicker | 9.1.0 | Picker nativo iOS/Android; web usa `<input type="date">` |
 | Iconos | @expo/vector-icons (Ionicons) | ^15.0.2 | Tab bar, íconos de UI |
 | Backend & DB | Supabase (PostgreSQL 15) | ^2.107.0 | RLS en todas las tablas |
 | Auth | Supabase Auth | — | Teléfono + contraseña |
@@ -57,10 +58,12 @@ family-finance-app/
 ├── src/
 │   ├── components/
 │   │   ├── SparklineChart.tsx       # Gráfico de línea SVG (react-native-svg)
+│   │   ├── DatePickerInput.tsx      # Selector de fecha cross-platform (web: <input type="date">, native: DateTimePicker)
 │   │   └── TransactionsList.tsx    # Lista unificada paginada con edición inline
 │   ├── hooks/
-│   │   ├── useCategorias.ts        # Hook: carga v_categorias + fallback hardcoded
-│   │   └── useExchangeRate.ts      # Hook: obtiene tasa PEN/USD del día
+│   │   ├── useCategorias.ts             # Hook: carga v_categorias + fallback hardcoded
+│   │   ├── useExchangeRate.ts           # Hook: obtiene tasa PEN/USD del día
+│   │   └── useAutoApplyCommitments.ts   # Hook: llama fn_auto_apply_recurrentes al montar
 │   ├── lib/
 │   │   ├── supabase.ts             # Cliente Supabase con polyfill SQLite
 │   │   ├── ocrImage.ts             # Captura de foto + Google Vision OCR
@@ -200,6 +203,7 @@ Líneas de un ticket de supermercado o voucher importado.
 | deuda_actual | NUMERIC(12,2) | Mantenida por triggers |
 | fecha_corte | INTEGER | Día del mes |
 | fecha_pago | INTEGER | Día del mes |
+| dia_cierre | INTEGER | Día de cierre del ciclo de facturación — V9 |
 | moneda | VARCHAR(3) | Default `'PEN'` — V4 |
 | activo | BOOLEAN | |
 
@@ -358,8 +362,14 @@ Disparador de abono de cuota. El trigger escribe en `transacciones`.
 #### `v_categorias`
 Unión de categorías base del sistema + `categorias_personalizadas` del usuario, con `sort_order` para orden consistente. Usada por `useCategorias` hook.
 
-#### `v_gastos_programados_mes`
+#### `v_gastos_programados_mes` (V9)
 Vista de gastos recurrentes y cuotas pendientes para el mes actual (`security_invoker = true`). Usada por Dashboard y Compromisos.
+- `aplicado` es un campo dinámico calculado con `EXISTS` sobre `transacciones` (no una columna estática), lo que elimina la necesidad de UPDATE manual y garantiza coherencia
+- Para recurrentes: busca si ya existe una tx vinculada via `gastos_recurrentes_id` en el mes actual
+- Para cuotas: compara `cuota_actual` con el número de cuota esperado este mes
+
+#### `v_pendientes_clasificacion` (V8)
+Vista de transacciones con `categoria = 'Por clasificar'` del usuario autenticado. Usada para el badge de comprobantes WhatsApp sin categorizar.
 
 ### 4.4 Funciones RPC
 
@@ -370,6 +380,11 @@ Calcula el termómetro de deuda 3 capas por categoría:
 - `deuda_proyectada`: proyección al cierre del mes (real + pendientes de `v_gastos_programados_mes`)
 
 Retorna: `SETOF { categoria, deuda_real, deuda_presupuestada, deuda_proyectada }`
+
+#### `fn_auto_apply_recurrentes(p_user_id UUID)` (V9)
+Crea transacciones en `transacciones` para todos los gastos recurrentes activos cuyo `dia_cobro` ya pasó en el mes actual y que no tienen tx vinculada. Idempotente. `SECURITY DEFINER`. Retorna `INTEGER` (número de filas insertadas).
+- Llamada desde `useAutoApplyCommitments` hook al montar las pantallas Inicio y Compromisos
+- La fecha de la transacción se clampea al último día del mes si `dia_cobro` excede los días del mes
 
 ---
 
@@ -451,6 +466,20 @@ Lista unificada de transacciones con funcionalidades completas.
 - Agrupación por día con headers de fecha
 - Usado en: `historial.tsx`, `transacciones.tsx`
 
+### `DatePickerInput` (`src/components/DatePickerInput.tsx`)
+Selector de fecha cross-platform.
+- Props: `value: string` (ISO YYYY-MM-DD), `onChange: (iso: string) => void`, `inputStyle?`, `placeholder?`
+- Web: renderiza `<input type="date">` HTML con estilos del design token de la app
+- Native: botón que muestra DD/MM/YYYY; tap abre `@react-native-community/datetimepicker` con `display="spinner"` y `locale="es-PE"`
+- El `require()` para el paquete nativo está dentro del componente nativo (condicional) para que el bundle web no lo incluya
+- Usado en: `cuentas.tsx` (ciclo Desde/Hasta), `TransactionsList.tsx` (edición inline), `pagos.tsx`, `prestamos.tsx`, `importar.tsx`
+
+### `useAutoApplyCommitments` (`src/hooks/useAutoApplyCommitments.ts`)
+Hook que llama `fn_auto_apply_recurrentes` al montar la pantalla.
+- Obtiene el `user.id` de la sesión activa y llama `supabase.rpc('fn_auto_apply_recurrentes', { p_user_id })`
+- Idempotente: si los recurrentes ya están aplicados, la RPC retorna 0 sin insertar nada
+- Usado en: `app/(tabs)/index.tsx` (Dashboard), `app/compromisos.tsx`
+
 ### `useCategorias` (`src/hooks/useCategorias.ts`)
 Hook que carga categorías de gasto del usuario.
 - Consulta `v_categorias` en Supabase
@@ -503,6 +532,7 @@ Hook que obtiene la tasa PEN/USD del día.
 | `migration_v6.sql` | `seguimiento_diario` en presupuestos + `modulo_tarjetas` + tabla `categorias_personalizadas` | 7 |
 | `migration_v7.sql` | Tabla `transaccion_detalles` + columna `fuente_raw` en transacciones | 8 |
 | `migration_v8.sql` | `telefono_whatsapp` en profiles + `operacion_id` único en transacciones + vista `v_pendientes_clasificacion` | 9 |
+| `migration_v9.sql` | `v_gastos_programados_mes` V9 con `aplicado` dinámico (EXISTS) + `fn_auto_apply_recurrentes` RPC + `dia_cierre` en `tarjetas_credito` | 10 |
 
 ---
 
