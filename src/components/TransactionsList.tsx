@@ -6,6 +6,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useCategorias, BASE_INCOME_CATS, iconForCat } from '@/hooks/useCategorias';
+import { DatePickerInput } from '@/components/DatePickerInput';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -36,13 +37,6 @@ const SYM: Record<string, string> = {
 };
 const CURRENCIES = ['PEN', 'USD', 'EUR', 'BRL', 'COP', 'MXN', 'ARS', 'CLP'];
 
-function parseFechaEdit(input: string): string | null {
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(input.trim())) return null;
-  const [dd, mm, yyyy] = input.split('/');
-  const d = parseInt(dd, 10), m = parseInt(mm, 10), y = parseInt(yyyy, 10);
-  if (d < 1 || d > 31 || m < 1 || m > 12 || y < 2020 || y > 2100) return null;
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 function getMesOptions() {
   const now = new Date();
@@ -270,9 +264,7 @@ export default function TransactionsList() {
     setEditMoneda(tx.moneda ?? 'PEN');
     setEditUnico(tx.es_gasto_unico ?? false);
     setEditSubcatId(tx.subcategoria_id ?? null);
-    const raw = tx.fecha ?? tx.creado_en.slice(0, 10);
-    const [y, mo, d] = raw.split('-');
-    setEditFecha(`${d}/${mo}/${y}`);
+    setEditFecha(tx.fecha ?? tx.creado_en.slice(0, 10));
     setSubcats([]);
     if (tx.tipo === 'gasto') loadSubcats(tx.categoria);
   };
@@ -282,8 +274,8 @@ export default function TransactionsList() {
     setSaveError('');
     const m = parseFloat(editMonto.replace(',', '.'));
     if (isNaN(m) || m <= 0) { setSaveError('El monto debe ser un número mayor a 0.'); return; }
-    const fechaParsed = parseFechaEdit(editFecha);
-    if (!fechaParsed) { setSaveError('Fecha inválida. Usa DD/MM/AAAA.'); return; }
+    if (!editFecha) { setSaveError('Selecciona una fecha.'); return; }
+    const fechaParsed = editFecha;
     setSaving(true);
     if (editing.tipo === 'gasto' && editing.metodo_pago === 'tarjeta' && editing.tarjeta_id && m !== Number(editing.monto)) {
       const { data: tc } = await supabase.from('tarjetas_credito').select('deuda_actual').eq('id', editing.tarjeta_id).single();
@@ -638,22 +630,11 @@ export default function TransactionsList() {
               </TouchableOpacity>
 
               <Text style={s.lbl}>Fecha</Text>
-              <TextInput
-                style={s.inp}
+              <DatePickerInput
                 value={editFecha}
-                onChangeText={(raw) => {
-                  const digits = raw.replace(/\D/g, '').slice(0, 8);
-                  let out = digits;
-                  if (digits.length >= 5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
-                  else if (digits.length >= 3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
-                  setEditFecha(out);
-                }}
-                placeholder="DD/MM/AAAA"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="numeric"
-                maxLength={10}
+                onChange={setEditFecha}
+                inputStyle={s.inp}
               />
-              <Text style={s.fechaHint}>Ejemplo: 21/06/2026</Text>
 
               <Text style={s.lbl}>Categoría</Text>
               <TouchableOpacity style={s.pickerRow} onPress={() => setShowCatPicker(true)}>
@@ -1152,7 +1133,6 @@ const s = StyleSheet.create({
   switchRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginBottom: 4 },
   switchLabel:{ fontSize: 15, fontWeight: '500', color: '#111827' },
   switchSub:  { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
-  fechaHint:  { fontSize: 11, color: '#9CA3AF', marginTop: -10, marginBottom: 14 },
   note:       { fontSize: 12, color: '#0891B2', marginBottom: 14, lineHeight: 17 },
   errBox:     { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 12 },
   errText:    { color: '#DC2626', fontSize: 13, lineHeight: 18 },

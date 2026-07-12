@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { DatePickerInput } from '@/components/DatePickerInput';
 
 interface Tarjeta  { id:string; banco:string; nombre_tarjeta:string; deuda_actual:number; linea_credito:number; dia_cierre:number|null }
 interface Prestamo { id:string; entidad_persona:string; tipo:'recibido'|'otorgado'; saldo_pendiente:number; monto_mensual:number; cuotas_estimadas:number|null; cuotas_pagadas:number }
@@ -76,11 +77,14 @@ export default function Cuentas() {
         if (cueRes.data) setCuentas(cueRes.data as Cuenta[]);
         setLoading(false);
 
-        // Inicializar inputs de ciclo con el mes actual para cada tarjeta
+        // Inicializar inputs de ciclo en ISO (YYYY-MM-DD) para cada tarjeta
         if (tarRes.data) {
-          const hoy    = new Date();
-          const defDesde = `01/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
-          const defHasta = `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+          const hoy      = new Date();
+          const yy       = hoy.getFullYear();
+          const mm       = String(hoy.getMonth() + 1).padStart(2, '0');
+          const dd       = String(hoy.getDate()).padStart(2, '0');
+          const defDesde = `${yy}-${mm}-01`;
+          const defHasta = `${yy}-${mm}-${dd}`;
           const inputs: Record<string, { desde:string; hasta:string }> = {};
           for (const t of tarRes.data as Tarjeta[]) {
             inputs[t.id] = { desde: defDesde, hasta: defHasta };
@@ -97,19 +101,10 @@ export default function Cuentas() {
 
   // ── Ciclo facturación ──────────────────────────────────────────────────────
 
-  // Convierte DD/MM/AAAA → YYYY-MM-DD. Retorna null si formato inválido.
-  function parseDMY(s: string): string | null {
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(s.trim())) return null;
-    const [dd, mm, yyyy] = s.trim().split('/');
-    const d = parseInt(dd,10), m = parseInt(mm,10), y = parseInt(yyyy,10);
-    if (d<1||d>31||m<1||m>12||y<2020||y>2100) return null;
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
   async function loadCicloCustom(tarjetaId: string, desdeInput: string, hastaInput: string) {
-    const desdeStr = parseDMY(desdeInput);
-    const hastaStr = parseDMY(hastaInput);
-    if (!desdeStr || !hastaStr) return;
+    if (!desdeInput || !hastaInput) return;
+    const desdeStr = desdeInput;
+    const hastaStr = hastaInput;
 
     setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total: prev[tarjetaId]?.total ?? 0, sincronizando: true } }));
 
@@ -330,45 +325,25 @@ export default function Cuentas() {
                   {/* ── Consolidado de ciclo (manual) ── */}
                   {(() => {
                     const inputs = cicloInputs[t.id] ?? { desde:'', hasta:'' };
-                    const canCalc = !!parseDMY(inputs.desde) && !!parseDMY(inputs.hasta);
+                    const canCalc = !!inputs.desde && !!inputs.hasta;
                     return (
                       <View style={styles.cicloBox}>
                         <Text style={styles.cicloTitle}>CONSOLIDADO DE CICLO</Text>
                         <View style={styles.cicloRow}>
                           <View style={styles.cicloField}>
                             <Text style={styles.cicloFieldLabel}>Desde</Text>
-                            <TextInput
-                              style={styles.cicloInput}
+                            <DatePickerInput
                               value={inputs.desde}
-                              onChangeText={v => {
-                                const digits = v.replace(/\D/g,'').slice(0,8);
-                                let out = digits;
-                                if (digits.length>=5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
-                                else if (digits.length>=3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
-                                setCicloInput(t.id,'desde',out);
-                              }}
-                              placeholder="DD/MM/AAAA"
-                              placeholderTextColor="#9CA3AF"
-                              keyboardType="numeric"
-                              maxLength={10}
+                              onChange={v => setCicloInput(t.id, 'desde', v)}
+                              inputStyle={styles.cicloInput}
                             />
                           </View>
                           <View style={styles.cicloField}>
                             <Text style={styles.cicloFieldLabel}>Hasta</Text>
-                            <TextInput
-                              style={styles.cicloInput}
+                            <DatePickerInput
                               value={inputs.hasta}
-                              onChangeText={v => {
-                                const digits = v.replace(/\D/g,'').slice(0,8);
-                                let out = digits;
-                                if (digits.length>=5) out = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`;
-                                else if (digits.length>=3) out = `${digits.slice(0,2)}/${digits.slice(2)}`;
-                                setCicloInput(t.id,'hasta',out);
-                              }}
-                              placeholder="DD/MM/AAAA"
-                              placeholderTextColor="#9CA3AF"
-                              keyboardType="numeric"
-                              maxLength={10}
+                              onChange={v => setCicloInput(t.id, 'hasta', v)}
+                              inputStyle={styles.cicloInput}
                             />
                           </View>
                           <TouchableOpacity
@@ -460,7 +435,7 @@ export default function Cuentas() {
             <View style={styles.sheetDiv} />
             {[
               { icon:'💳', label:'Nueva Tarjeta de Crédito', sub:'Banco · Nombre · Línea · Deuda', bg:'#FEF3C7',
-                fn: () => { setShowFabMenu(false); setTarForm({ banco:'', nombre:'', linea:'', deuda:'' }); setTarError(''); setShowNewTar(true); } },
+                fn: () => { setShowFabMenu(false); setTarForm({ banco:'', nombre:'', linea:'', deuda:'', dia_cierre:'' }); setTarError(''); setShowNewTar(true); } },
               { icon:'📋', label:'Nuevo Préstamo',           sub:'Entidad · Tipo · Monto · Cuota',  bg:'#EDE9FE',
                 fn: () => { setShowFabMenu(false); setPreForm({ entidad:'', tipo:'recibido', monto_total:'', saldo:'', mensual:'' }); setPreError(''); setShowNewPre(true); } },
               { icon:'🏦', label:'Nueva Cuenta de Ahorro',   sub:'Nombre · Saldo inicial',          bg:'#E0F2FE',
