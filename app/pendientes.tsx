@@ -1,0 +1,342 @@
+import { useState, useCallback } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Modal, ScrollView, Platform, SafeAreaView, Alert,
+} from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { supabase } from '@/lib/supabase';
+import { useCategorias, ICON_MAP } from '@/hooks/useCategorias';
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface PendingTx {
+  id:          string;
+  monto:       number;
+  moneda:      string | null;
+  descripcion: string | null;
+  fecha:       string | null;
+  creado_en:   string;
+  fuente:      string | null;
+  fuente_raw:  string | null;
+  metodo_pago: string | null;
+  tarjeta_id:  string | null;
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const SYM: Record<string, string> = {
+  PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$', COP: '$', MXN: '$', ARS: '$', CLP: '$',
+};
+
+function fmt(monto: number, moneda: string | null) {
+  const s = SYM[moneda ?? 'PEN'] ?? moneda ?? 'S/';
+  return `${s} ${monto.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fuenteLabel(fuente: string | null) {
+  if (!fuente) return '🤖 Auto';
+  if (fuente.includes('email'))        return '📧 Email';
+  if (fuente.includes('notification')) return '🔔 Notificación';
+  if (fuente.includes('whatsapp'))     return '💬 WhatsApp';
+  return '🤖 Auto';
+}
+
+function fmtDate(fecha: string | null, creado_en: string) {
+  const src = fecha ?? creado_en;
+  const d   = new Date(src);
+  return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
+
+export default function Pendientes() {
+  const [txs,     setTxs]     = useState<PendingTx[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Categorize modal state
+  const [selected,    setSelected]    = useState<PendingTx | null>(null);
+  const [showCatModal, setShowCatModal] = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  const [showRaw,     setShowRaw]     = useState<string | null>(null);
+
+  const { categorias } = useCategorias();
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, []),
+  );
+
+  async function load() {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoading(false); return; }
+
+    const { data } = await supabase
+      .from('transacciones')
+      .select('id,monto,moneda,descripcion,fecha,creado_en,fuente,fuente_raw,metodo_pago,tarjeta_id')
+      .eq('user_id', user.id)
+      .eq('estado', 'PENDIENTE_REVISION')
+      .eq('activo', true)
+      .order('creado_en', { ascending: false });
+
+    setTxs(data ?? []);
+    setLoading(false);
+  }
+
+  async function confirmar(tx: PendingTx, categoria: string) {
+    setSaving(true);
+    await supabase
+      .from('transacciones')
+      .update({ estado: 'PROCESADO', categoria })
+      .eq('id', tx.id);
+    setSaving(false);
+    setShowCatModal(false);
+    setSelected(null);
+    load();
+  }
+
+  async function rechazar(tx: PendingTx) {
+    Alert.alert(
+      'Rechazar gasto',
+      '¿Eliminar este gasto capturado automáticamente?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar', style: 'destructive',
+          onPress: async () => {
+            await supabase
+              .from('transacciones')
+              .update({ activo: false })
+              .eq('id', tx.id);
+            load();
+          },
+        },
+      ],
+    );
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator size="large" color="#7C3AED" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.root}>
+      {/* Header */}
+      <SafeAreaView style={s.headerWrap}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+            <Text style={s.backIcon}>‹</Text>
+          </TouchableOpacity>
+          <View>
+            <Text style={s.title}>Pendientes de revisión</Text>
+            <Text style={s.subtitle}>
+              {txs.length === 0 ? 'Todo al día' : `${txs.length} gasto${txs.length > 1 ? 's' : ''} por revisar`}
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+
+      {txs.length === 0 ? (
+        <View style={s.empty}>
+          <Text style={s.emptyIcon}>✅</Text>
+          <Text style={s.emptyTitle}>Sin pendientes</Text>
+          <Text style={s.emptyBody}>
+            Cuando lleguen gastos automáticos por email o notificación aparecerán aquí.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={txs}
+          keyExtractor={t => t.id}
+          contentContainerStyle={s.list}
+          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          renderItem={({ item: tx }) => (
+            <View style={s.card}>
+              {/* Top row */}
+              <View style={s.cardTop}>
+                <View style={s.cardLeft}>
+                  <Text style={s.comercio} numberOfLines={1}>
+                    {tx.descripcion ?? 'Sin nombre'}
+                  </Text>
+                  <Text style={s.cardMeta}>
+                    {fuenteLabel(tx.fuente)}  ·  {fmtDate(tx.fecha, tx.creado_en)}
+                  </Text>
+                </View>
+                <Text style={s.monto}>{fmt(tx.monto, tx.moneda)}</Text>
+              </View>
+
+              {/* Raw text button */}
+              {tx.fuente_raw && (
+                <TouchableOpacity
+                  style={s.rawBtn}
+                  onPress={() => setShowRaw(tx.fuente_raw)}
+                >
+                  <Text style={s.rawBtnText}>Ver texto original</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Actions */}
+              <View style={s.actions}>
+                <TouchableOpacity
+                  style={s.btnReject}
+                  onPress={() => rechazar(tx)}
+                >
+                  <Text style={s.btnRejectText}>✕ Rechazar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.btnConfirm}
+                  onPress={() => { setSelected(tx); setShowCatModal(true); }}
+                >
+                  <Text style={s.btnConfirmText}>✓ Confirmar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        />
+      )}
+
+      {/* Raw text modal */}
+      <Modal visible={!!showRaw} transparent animationType="fade" onRequestClose={() => setShowRaw(null)}>
+        <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setShowRaw(null)}>
+          <View style={s.rawModal}>
+            <Text style={s.rawModalTitle}>Texto original</Text>
+            <ScrollView style={s.rawScroll}>
+              <Text style={s.rawText}>{showRaw}</Text>
+            </ScrollView>
+            <TouchableOpacity style={s.rawClose} onPress={() => setShowRaw(null)}>
+              <Text style={s.rawCloseText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Category picker modal */}
+      <Modal
+        visible={showCatModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCatModal(false)}
+      >
+        <View style={s.overlay}>
+          <View style={s.catModal}>
+            <Text style={s.catModalTitle}>Categorizar gasto</Text>
+            {selected && (
+              <Text style={s.catModalSub}>
+                {selected.descripcion ?? 'Sin nombre'} · {fmt(selected.monto, selected.moneda)}
+              </Text>
+            )}
+
+            <ScrollView style={s.catList} showsVerticalScrollIndicator={false}>
+              {categorias.filter(c => !['Sueldo','Bono','Freelance','Inversiones','Negocio',
+                'Ahorro','Retiro Ahorro','Pago Tarjeta','Abono Préstamo'].includes(c.nombre))
+                .map(cat => (
+                  <TouchableOpacity
+                    key={cat.nombre}
+                    style={s.catRow}
+                    disabled={saving}
+                    onPress={() => selected && confirmar(selected, cat.nombre)}
+                  >
+                    <Text style={s.catIcon}>{ICON_MAP[cat.nombre] ?? cat.icono ?? '📦'}</Text>
+                    <Text style={s.catName}>{cat.nombre}</Text>
+                    {saving && <ActivityIndicator size="small" color="#7C3AED" />}
+                  </TouchableOpacity>
+                ))
+              }
+            </ScrollView>
+
+            <TouchableOpacity style={s.catCancel} onPress={() => setShowCatModal(false)}>
+              <Text style={s.catCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+// ── Styles ─────────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  root:       { flex: 1, backgroundColor: '#F7F8FA' },
+  center:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  headerWrap: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  header:     {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingTop: Platform.OS === 'android' ? 44 : 12,
+    paddingHorizontal: 16, paddingBottom: 14,
+  },
+  backBtn:    { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
+  backIcon:   { fontSize: 28, color: '#374151', lineHeight: 32 },
+  title:      { fontSize: 18, fontWeight: '800', color: '#111827' },
+  subtitle:   { fontSize: 12, color: '#6B7280', marginTop: 1 },
+
+  list:       { padding: 16 },
+
+  card:       {
+    backgroundColor: '#fff', borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  },
+  cardTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardLeft:   { flex: 1, marginRight: 12 },
+  comercio:   { fontSize: 15, fontWeight: '700', color: '#111827' },
+  cardMeta:   { fontSize: 12, color: '#9CA3AF', marginTop: 3 },
+  monto:      { fontSize: 17, fontWeight: '800', color: '#DC2626' },
+
+  rawBtn:     { marginTop: 10, alignSelf: 'flex-start' },
+  rawBtnText: { fontSize: 12, color: '#7C3AED', fontWeight: '600' },
+
+  actions:    { flexDirection: 'row', gap: 10, marginTop: 14 },
+  btnReject:  {
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: '#FEE2E2', alignItems: 'center',
+  },
+  btnRejectText: { fontSize: 13, fontWeight: '700', color: '#DC2626' },
+  btnConfirm: {
+    flex: 2, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: '#7C3AED', alignItems: 'center',
+  },
+  btnConfirmText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  empty:      { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyIcon:  { fontSize: 52, marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 8 },
+  emptyBody:  { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
+
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+
+  rawModal:   { backgroundColor: '#fff', borderRadius: 16, padding: 20, maxHeight: '70%' },
+  rawModalTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 12 },
+  rawScroll:  { maxHeight: 300 },
+  rawText:    { fontSize: 13, color: '#374151', lineHeight: 20 },
+  rawClose:   { marginTop: 16, alignItems: 'center', paddingVertical: 12,
+                backgroundColor: '#F3F4F6', borderRadius: 10 },
+  rawCloseText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+
+  catModal:   {
+    backgroundColor: '#fff', borderRadius: 20,
+    padding: 20, maxHeight: '80%',
+    alignSelf: 'stretch',
+  },
+  catModalTitle: { fontSize: 17, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  catModalSub:   { fontSize: 13, color: '#6B7280', marginBottom: 16 },
+  catList:    { maxHeight: 380 },
+  catRow:     {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F9FAFB',
+  },
+  catIcon:    { fontSize: 22 },
+  catName:    { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
+  catCancel:  { marginTop: 16, alignItems: 'center', paddingVertical: 13,
+                backgroundColor: '#F3F4F6', borderRadius: 12 },
+  catCancelText: { fontSize: 14, fontWeight: '600', color: '#6B7280' },
+});
