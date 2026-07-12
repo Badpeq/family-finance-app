@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { DatePickerInput } from '@/components/DatePickerInput';
 
 type PrestamoTipo = 'recibido' | 'otorgado';
 
@@ -488,12 +489,10 @@ export default function Prestamos() {
                         value={pagoMonto}
                         onChangeText={setPagoMonto}
                       />
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Fecha (AAAA-MM-DD)"
-                        placeholderTextColor="#9CA3AF"
+                      <DatePickerInput
                         value={pagoFecha}
-                        onChangeText={setPagoFecha}
+                        onChange={setPagoFecha}
+                        inputStyle={styles.input}
                       />
                       <TextInput
                         style={styles.input}

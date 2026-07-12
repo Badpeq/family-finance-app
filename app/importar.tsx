@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { parseVoucherText, parseTicketItems, type ParsedLine, type ParsedItem } from '@/lib/parseVoucher';
 import { pickAndOcr, type OcrSource } from '@/lib/ocrImage';
 import { importStore } from '@/lib/importStore';
+import { DatePickerInput } from '@/components/DatePickerInput';
 
 const CATS = [
   'Alimentación','Transporte','Vivienda','Entretenimiento',
@@ -385,9 +386,11 @@ export default function Importar() {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.label}>Fecha</Text>
-                    <TextInput style={s.input} placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#9CA3AF" value={ticketFecha}
-                      onChangeText={setTicketFecha} />
+                    <DatePickerInput
+                      value={ticketFecha}
+                      onChange={setTicketFecha}
+                      inputStyle={s.input}
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.label}>Total (S/)</Text>

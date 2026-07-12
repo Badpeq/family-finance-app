@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { DatePickerInput } from '@/components/DatePickerInput';
 
 type PagoTipo = 'tarjeta' | 'prestamo';
 
@@ -279,12 +280,10 @@ export default function Pagos() {
               />
 
               <Text style={styles.label}>Fecha</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="AAAA-MM-DD"
-                placeholderTextColor="#9CA3AF"
+              <DatePickerInput
                 value={fecha}
-                onChangeText={setFecha}
+                onChange={setFecha}
+                inputStyle={styles.input}
               />
 
               <Text style={styles.label}>Descripción (opcional)</Text>
