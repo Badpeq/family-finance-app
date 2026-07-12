@@ -6,7 +6,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
-interface Tarjeta  { id:string; banco:string; nombre_tarjeta:string; deuda_actual:number; linea_credito:number }
+interface Tarjeta  { id:string; banco:string; nombre_tarjeta:string; deuda_actual:number; linea_credito:number; dia_cierre:number|null }
 interface Prestamo { id:string; entidad_persona:string; tipo:'recibido'|'otorgado'; saldo_pendiente:number; monto_mensual:number; cuotas_estimadas:number|null; cuotas_pagadas:number }
 interface Cuenta   { id:string; nombre_cuenta:string; saldo_actual:number }
 
@@ -34,9 +34,12 @@ export default function Cuentas() {
   // Tarjeta
   const [showNewTar,   setShowNewTar]   = useState(false);
   const [editTar,      setEditTar]      = useState<Tarjeta|null>(null);
-  const [tarForm,      setTarForm]      = useState({ banco:'', nombre:'', linea:'', deuda:'' });
+  const [tarForm,      setTarForm]      = useState({ banco:'', nombre:'', linea:'', deuda:'', dia_cierre:'' });
   const [tarError,     setTarError]     = useState('');
   const [tarSaving,    setTarSaving]    = useState(false);
+
+  // Ciclo de facturación: gastosCiclo[tarjeta_id] = { total, desde, hasta }
+  const [gastosCiclo,  setGastosCiclo]  = useState<Record<string, { total:number; desde:Date; hasta:Date; sincronizando:boolean }>>({});
 
   // Préstamo
   const [showNewPre,   setShowNewPre]   = useState(false);
@@ -61,7 +64,7 @@ export default function Cuentas() {
         if (!user || !active) return;
         const [pRes, tarRes, preRes, cueRes] = await Promise.all([
           supabase.from('profiles').select('moneda_base').eq('id', user.id).single(),
-          supabase.from('tarjetas_credito').select('id,banco,nombre_tarjeta,deuda_actual,linea_credito').eq('user_id', user.id).order('creado_en', { ascending: true }),
+          supabase.from('tarjetas_credito').select('id,banco,nombre_tarjeta,deuda_actual,linea_credito,dia_cierre').eq('user_id', user.id).order('creado_en', { ascending: true }),
           supabase.from('prestamos').select('id,entidad_persona,tipo,saldo_pendiente,monto_mensual,cuotas_estimadas,cuotas_pagadas').eq('user_id', user.id).gt('saldo_pendiente', 0).order('creado_en', { ascending: true }),
           supabase.from('cuentas_ahorro').select('id,nombre_cuenta,saldo_actual').eq('user_id', user.id).order('creado_en', { ascending: true }),
         ]);
@@ -71,6 +74,14 @@ export default function Cuentas() {
         if (preRes.data) setPrestamos(preRes.data as Prestamo[]);
         if (cueRes.data) setCuentas(cueRes.data as Cuenta[]);
         setLoading(false);
+
+        // Cargar gastos de ciclo para tarjetas con dia_cierre definido
+        if (tarRes.data) {
+          for (const t of tarRes.data as Tarjeta[]) {
+            if (!t.dia_cierre) continue;
+            loadCiclo(t.id, t.dia_cierre);
+          }
+        }
       })();
       return () => { active = false; };
     }, [])
@@ -79,29 +90,92 @@ export default function Cuentas() {
   const sym = SYM[currency] ?? currency;
   const fmt = (n: number) => `${sym} ${n.toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
+  // ── Ciclo facturación ──────────────────────────────────────────────────────
+  function calcCicloRange(diaCierre: number): { desde: Date; hasta: Date } {
+    const hoy   = new Date();
+    const diaH  = hoy.getDate();
+    let desde: Date;
+    let hasta: Date;
+
+    if (diaH >= diaCierre) {
+      // El cierre ya pasó este mes → ciclo: diaCierre de este mes hasta diaCierre del próximo
+      desde = new Date(hoy.getFullYear(), hoy.getMonth(), diaCierre);
+      hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, diaCierre);
+    } else {
+      // El cierre aún no llegó → ciclo: diaCierre del mes pasado hasta diaCierre de este mes
+      desde = new Date(hoy.getFullYear(), hoy.getMonth() - 1, diaCierre);
+      hasta = new Date(hoy.getFullYear(), hoy.getMonth(), diaCierre);
+    }
+    return { desde, hasta };
+  }
+
+  async function loadCiclo(tarjetaId: string, diaCierre: number) {
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { ...prev[tarjetaId], sincronizando: true, total: prev[tarjetaId]?.total ?? 0, desde: prev[tarjetaId]?.desde ?? new Date(), hasta: prev[tarjetaId]?.hasta ?? new Date() } }));
+
+    const { desde, hasta } = calcCicloRange(diaCierre);
+    const desdeStr = desde.toISOString().slice(0, 10);
+    const hastaStr = hasta.toISOString().slice(0, 10);
+
+    const { data } = await supabase
+      .from('transacciones')
+      .select('monto,moneda,tipo_cambio')
+      .eq('tarjeta_id', tarjetaId)
+      .eq('metodo_pago', 'tarjeta')
+      .eq('activo', true)
+      .gte('fecha', desdeStr)
+      .lt('fecha', hastaStr);
+
+    const total = (data ?? []).reduce((sum, tx) => {
+      const m  = Number(tx.monto);
+      const mon = tx.moneda ?? 'PEN';
+      return sum + (mon === 'PEN' ? m : m * Number(tx.tipo_cambio ?? 1));
+    }, 0);
+
+    setGastosCiclo(prev => ({ ...prev, [tarjetaId]: { total, desde, hasta, sincronizando: false } }));
+  }
+
+  async function handleSyncDeudaCiclo(tar: Tarjeta) {
+    const ciclo = gastosCiclo[tar.id];
+    if (!ciclo) return;
+    const nueva = ciclo.total;
+    await supabase.from('tarjetas_credito').update({ deuda_actual: nueva }).eq('id', tar.id);
+    setTarjetas(prev => prev.map(t => t.id === tar.id ? { ...t, deuda_actual: nueva } : t));
+  }
+
+  function fmtDate(d: Date) {
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
   // ── Tarjeta handlers
   const handleSaveTar = async () => {
     if (!tarForm.banco.trim())  { setTarError('Banco es requerido.'); return; }
     if (!tarForm.nombre.trim()) { setTarError('Nombre de tarjeta es requerido.'); return; }
+    const diaCierreRaw = parseInt(tarForm.dia_cierre.trim(), 10);
+    const diaCierre = !isNaN(diaCierreRaw) && diaCierreRaw >= 1 && diaCierreRaw <= 31 ? diaCierreRaw : null;
     setTarError(''); setTarSaving(true);
     const { data:{ user } } = await supabase.auth.getUser();
     if (!user) { setTarSaving(false); return; }
     if (editTar) {
       const linea = parseFloat(tarForm.linea) || 0;
       const deuda = parseFloat(tarForm.deuda) || 0;
-      await supabase.from('tarjetas_credito').update({ banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda }).eq('id', editTar.id);
-      setTarjetas(prev => prev.map(t => t.id === editTar.id ? { ...t, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda } : t));
+      await supabase.from('tarjetas_credito').update({ banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda, dia_cierre: diaCierre }).eq('id', editTar.id);
+      setTarjetas(prev => prev.map(t => t.id === editTar.id ? { ...t, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(), linea_credito: linea, deuda_actual: deuda, dia_cierre: diaCierre } : t));
+      if (diaCierre) loadCiclo(editTar.id, diaCierre);
       setEditTar(null);
     } else {
       const { data, error } = await supabase.from('tarjetas_credito').insert({
         user_id: user.id, banco: tarForm.banco.trim(), nombre_tarjeta: tarForm.nombre.trim(),
         linea_credito: parseFloat(tarForm.linea) || 0, deuda_actual: parseFloat(tarForm.deuda) || 0,
-      }).select('id,banco,nombre_tarjeta,deuda_actual,linea_credito').single();
+        dia_cierre: diaCierre,
+      }).select('id,banco,nombre_tarjeta,deuda_actual,linea_credito,dia_cierre').single();
       if (error) { setTarError(error.message); setTarSaving(false); return; }
-      if (data) setTarjetas(prev => [...prev, data as Tarjeta]);
+      if (data) {
+        setTarjetas(prev => [...prev, data as Tarjeta]);
+        if ((data as Tarjeta).dia_cierre) loadCiclo((data as Tarjeta).id, (data as Tarjeta).dia_cierre!);
+      }
       setShowNewTar(false);
     }
-    setTarForm({ banco:'', nombre:'', linea:'', deuda:'' });
+    setTarForm({ banco:'', nombre:'', linea:'', deuda:'', dia_cierre:'' });
     setTarSaving(false);
   };
 
@@ -159,7 +233,7 @@ export default function Cuentas() {
     setCueSaving(false);
   };
 
-  const openEditTar = (t: Tarjeta) => { setTarForm({ banco: t.banco, nombre: t.nombre_tarjeta, linea: String(Number(t.linea_credito)), deuda: String(Number(t.deuda_actual)) }); setTarError(''); setEditTar(t); };
+  const openEditTar = (t: Tarjeta) => { setTarForm({ banco: t.banco, nombre: t.nombre_tarjeta, linea: String(Number(t.linea_credito)), deuda: String(Number(t.deuda_actual)), dia_cierre: t.dia_cierre != null ? String(t.dia_cierre) : '' }); setTarError(''); setEditTar(t); };
   const openEditPre = (p: Prestamo) => { setPreForm({ entidad: p.entidad_persona, tipo: p.tipo, monto_total: '', saldo: String(Number(p.saldo_pendiente)), mensual: String(Number(p.monto_mensual)) }); setPreError(''); setEditPre(p); };
   const openEditCue = (c: Cuenta)   => { setCueForm({ nombre: c.nombre_cuenta, saldo: String(Number(c.saldo_actual)) }); setCueError(''); setEditCue(c); };
 
@@ -224,6 +298,7 @@ export default function Cuentas() {
               const color = bankColor(t.banco);
               const disp  = Math.max(0, Number(t.linea_credito) - Number(t.deuda_actual));
               const pct   = Number(t.linea_credito) > 0 ? Math.min(Number(t.deuda_actual) / Number(t.linea_credito), 1) : 0;
+              const ciclo = gastosCiclo[t.id];
               return (
                 <View key={t.id}>
                   <View style={styles.tarjetaCard}>
@@ -244,7 +319,43 @@ export default function Cuentas() {
                       <Text style={styles.editBtnText}>✎</Text>
                     </TouchableOpacity>
                   </View>
-                  {i < tarjetas.length - 1 && <View style={styles.rowSep} />}
+
+                  {/* ── Ciclo de facturación ── */}
+                  {t.dia_cierre && (
+                    <View style={styles.cicloBox}>
+                      {ciclo && !ciclo.sincronizando ? (
+                        <>
+                          <View style={{ flex:1 }}>
+                            <Text style={styles.cicloTitle}>Ciclo {fmtDate(ciclo.desde)} – {fmtDate(ciclo.hasta)}</Text>
+                            <Text style={styles.cicloTotal}>{fmt(ciclo.total)}</Text>
+                            <Text style={styles.cicloSub}>Gasto con tarjeta en este período</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={styles.cicloBtn}
+                            onPress={() => handleSyncDeudaCiclo(t)}
+                          >
+                            <Text style={styles.cicloBtnText}>Actualizar deuda</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
+                          <ActivityIndicator size="small" color="#DC2626" />
+                          <Text style={styles.cicloSub}>Calculando ciclo…</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {!t.dia_cierre && (
+                    <TouchableOpacity
+                      style={styles.cicloSetupBtn}
+                      onPress={() => openEditTar(t)}
+                    >
+                      <Text style={styles.cicloSetupText}>+ Definir ciclo de facturación</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {i < tarjetas.length - 1 && <View style={[styles.rowSep, { marginTop: 8 }]} />}
                 </View>
               );
             })}
@@ -362,6 +473,16 @@ export default function Cuentas() {
                   </View>
                 ) : null;
               })()}
+              <Text style={styles.mLabel}>Día de cierre de ciclo <Text style={{ fontWeight:'400', color:'#9CA3AF' }}>(opcional, 1–31)</Text></Text>
+              <TextInput
+                style={styles.mInput}
+                keyboardType="number-pad"
+                placeholder="Ej: 7  (si tu tarjeta cierra el día 7)"
+                placeholderTextColor="#9CA3AF"
+                maxLength={2}
+                value={tarForm.dia_cierre}
+                onChangeText={v => setTarForm(s => ({ ...s, dia_cierre: v.replace(/\D/g,'').slice(0,2) }))}
+              />
               {!!tarError && <Text style={styles.formError}>{tarError}</Text>}
               <TouchableOpacity style={[styles.formSaveBtn, tarSaving && { opacity:0.6 }]} onPress={handleSaveTar} disabled={tarSaving}>
                 {tarSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.formSaveText}>{editTar ? 'Guardar cambios' : 'Crear Tarjeta'}</Text>}
@@ -479,6 +600,15 @@ const styles = StyleSheet.create({
 
   editBtn:     { width:32, height:32, borderRadius:8, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', flexShrink:0 },
   editBtnText: { fontSize:15, color:'#6B7280' },
+
+  cicloBox:       { flexDirection:'row', alignItems:'center', backgroundColor:'#FFF7F7', borderRadius:10, padding:10, marginBottom:8, gap:10 },
+  cicloTitle:     { fontSize:10, fontWeight:'700', color:'#DC2626', textTransform:'uppercase', letterSpacing:0.5, marginBottom:2 },
+  cicloTotal:     { fontSize:16, fontWeight:'800', color:'#111827' },
+  cicloSub:       { fontSize:10, color:'#9CA3AF', marginTop:1 },
+  cicloBtn:       { backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, paddingVertical:7 },
+  cicloBtnText:   { fontSize:11, fontWeight:'700', color:'#fff' },
+  cicloSetupBtn:  { paddingVertical:6, paddingHorizontal:2, marginBottom:6 },
+  cicloSetupText: { fontSize:12, color:'#3B82F6', fontWeight:'500' },
 
   fab:     { position:'absolute', bottom:24, right:20, width:56, height:56, borderRadius:28,
              backgroundColor:'#3B82F6', justifyContent:'center', alignItems:'center',

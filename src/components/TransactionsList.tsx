@@ -46,12 +46,29 @@ function parseFechaEdit(input: string): string | null {
 
 function getMesOptions() {
   const now = new Date();
-  return Array.from({ length: 6 }, (_, i) => {
+  return Array.from({ length: 12 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     const label = d.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
     return { label: label.charAt(0).toUpperCase() + label.slice(1), value };
   });
+}
+
+// Labels cortos para la quick-bar
+function getQuickChips() {
+  const now = new Date();
+  return [
+    { label: 'Todo', value: 'all' },
+    ...Array.from({ length: 3 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = i === 0
+        ? 'Este mes'
+        : d.toLocaleDateString('es-PE', { month: 'short' }).replace('.', '').charAt(0).toUpperCase()
+          + d.toLocaleDateString('es-PE', { month: 'short' }).replace('.', '').slice(1);
+      return { label, value };
+    }),
+  ];
 }
 
 function fmtTx(tx: Tx, fallbackCur: string) {
@@ -201,7 +218,8 @@ export default function TransactionsList() {
     grouped.push({ type: 'tx', tx });
   }
 
-  const mesOptions = getMesOptions();
+  const mesOptions  = getMesOptions();
+  const quickChips  = getQuickChips();
   const activeFilters =
     (searchText ? 1 : 0) +
     (filterMoneda ? 1 : 0) +
@@ -444,6 +462,39 @@ export default function TransactionsList() {
           </View>
         )}
       </View>
+
+      {/* ── Quick month chips ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.chipBar}
+        style={s.chipBarWrap}
+      >
+        {quickChips.map(chip => {
+          const active = filterMes === chip.value;
+          return (
+            <TouchableOpacity
+              key={chip.value}
+              style={[s.qChip, active && s.qChipOn]}
+              onPress={() => {
+                if (filterMes === chip.value) return;
+                setFilterMes(chip.value);
+                setPage(0);
+                fetchTxs(0, true, { mes: chip.value });
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={[s.qChipText, active && s.qChipTextOn]}>{chip.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+        <TouchableOpacity
+          style={s.qChipMore}
+          onPress={() => setShowFilters(v => !v)}
+        >
+          <Text style={s.qChipMoreText}>Más ›</Text>
+        </TouchableOpacity>
+      </ScrollView>
 
       {/* ── List ── */}
       {loading ? (
@@ -1023,6 +1074,16 @@ const s = StyleSheet.create({
   switchFilt:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   resetBtn:        { marginTop: 12, alignItems: 'center', paddingVertical: 10, backgroundColor: '#FEF2F2', borderRadius: 10 },
   resetText:       { fontSize: 13, color: '#DC2626', fontWeight: '600' },
+
+  // Quick chip bar
+  chipBarWrap:  { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  chipBar:      { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: 'row' },
+  qChip:        { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#F3F4F6', borderRadius: 20, borderWidth: 1.5, borderColor: 'transparent' },
+  qChipOn:      { backgroundColor: '#EDE9FE', borderColor: '#7C3AED' },
+  qChipText:    { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  qChipTextOn:  { color: '#5B21B6' },
+  qChipMore:    { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#F9FAFB', borderRadius: 20 },
+  qChipMoreText:{ fontSize: 13, fontWeight: '500', color: '#3B82F6' },
 
   // List
   list:     { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 32 },
