@@ -1,0 +1,113 @@
+{
+  "name": "Family Finance — Ingesta emails bancarios",
+  "flow": [
+    {
+      "id": 1,
+      "module": "google-gmail:watchEmail",
+      "version": 1,
+      "parameters": {
+        "__IMTCONN__": null,
+        "folder": "INBOX",
+        "maxResults": 10,
+        "labelIds": []
+      },
+      "filter": {
+        "name": "Solo emails bancarios",
+        "conditions": [
+          [
+            {
+              "a": "{{1.from}}",
+              "b": "notificaciones@bcp.com.pe notificaciones@bbva.com notificaciones@interbank.pe alertas@scotiabank.com.pe",
+              "o": "text:contain:any"
+            }
+          ]
+        ]
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 }
+      }
+    },
+    {
+      "id": 2,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": { "handleErrors": false, "useNewZLibDecompression": true },
+      "mapper": {
+        "url": "https://tsdawpxiqqnesikcqlex.supabase.co/functions/v1/ingest-transaction",
+        "serializeUrl": false,
+        "method": "post",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer test-ingest-token-1783882682"
+          },
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "qs": [],
+        "bodyType": "raw",
+        "parseResponse": true,
+        "authUser": "",
+        "authPass": "",
+        "timeout": "",
+        "shareCookies": false,
+        "ca": "",
+        "rejectUnauthorized": true,
+        "followRedirect": true,
+        "useQuerystring": false,
+        "gzip": true,
+        "useMtls": false,
+        "contentType": "application/json",
+        "data": "{\"source\":\"email\",\"raw_text\":\"{{1.snippet}} {{1.text}}\"}",
+        "followAllRedirects": false
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 }
+      }
+    },
+    {
+      "id": 3,
+      "module": "builtin:BasicFeeder",
+      "version": 1,
+      "parameters": {},
+      "filter": {
+        "name": "Solo si fue procesado OK",
+        "conditions": [
+          [
+            {
+              "a": "{{2.data.ok}}",
+              "b": "true",
+              "o": "text:equal:nocase"
+            }
+          ]
+        ]
+      },
+      "mapper": {
+        "array": "{{emptyarray}}"
+      },
+      "metadata": {
+        "designer": { "x": 600, "y": 0 }
+      }
+    }
+  ],
+  "metadata": {
+    "instant": false,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": false,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": false,
+      "freshVariables": false
+    },
+    "designer": { "orphans": [] },
+    "zone": "us1.make.com"
+  }
+}
