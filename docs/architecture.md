@@ -1,5 +1,5 @@
 # Arquitectura: Family Finance App
-**Versión:** V9 (Ciclo facturación + auto-apply recurrentes + DatePickerInput) · **Última actualización:** 2026-07-12 · **Rama activa:** `main` (producción) / `v2-advanced` (desarrollo)
+**Versión:** V10 (Ingesta automática + revisión de pendientes) · **Última actualización:** 2026-07-12 · **Rama activa:** `main` (producción) / `v2-advanced` (desarrollo)
 
 ---
 
@@ -21,7 +21,9 @@
 | Deploy web | Vercel | — | Build: `expo export --platform web`, SPA rewrite |
 | OCR | Google Vision API | — | Lectura de tickets de supermercado con foto |
 | Visión IA (WA) | Anthropic Claude claude-haiku-4-5-20251001 | API 2023-06-01 | Extracción estructurada de comprobantes Yape/Plin |
+| Parsing IA (email) | Anthropic Claude claude-haiku-4-5-20251001 | API 2023-06-01 | Extracción de monto/moneda/comercio/tarjeta de texto bancario |
 | WhatsApp | Meta Cloud API v19 | — | Receptor de capturas de pago automáticas |
+| Automatización email | Make.com | — | Gmail → Edge Function pipeline (ver `AUTOMATION.md`) |
 | Tipo de cambio | Google Sheets + open.er-api.com | — | Cascada con caché en `tipos_cambio` |
 
 ---
@@ -41,6 +43,7 @@ family-finance-app/
 │   ├── gestionar-deudas.tsx         # CRUD de gastos recurrentes
 │   ├── categoria-detalle.tsx        # Drill-down de gastos por categoría + mes
 │   ├── vinculacion-whatsapp.tsx     # Config: vincular número WA + ver pendientes por clasificar
+│   ├── pendientes.tsx               # Revisión de gastos auto-capturados (confirmar/rechazar)
 │   ├── ahorros.tsx                  # Operaciones sobre cuentas de ahorro
 │   ├── pagos.tsx                    # Pago de deuda de tarjeta de crédito
 │   ├── prestamos.tsx                # Abono de cuota de préstamo
@@ -73,13 +76,20 @@ family-finance-app/
 ├── supabase/
 │   ├── config.toml                  # Configuración CLI Supabase (project id, jwt config)
 │   └── functions/
-│       └── whatsapp-webhook/
-│           ├── index.ts             # Entry point: webhook Meta → validación → orquestación
-│           ├── providers.ts         # Adaptador Meta Cloud API: parse, download, reply, HMAC
-│           ├── parseImage.ts        # Extracción Claude claude-haiku-4-5-20251001 visión → JSON Yape/Plin
+│       ├── whatsapp-webhook/
+│       │   ├── index.ts             # Entry point: webhook Meta → validación → orquestación
+│       │   ├── providers.ts         # Adaptador Meta Cloud API: parse, download, reply, HMAC
+│       │   ├── parseImage.ts        # Extracción Claude claude-haiku-4-5-20251001 visión → JSON Yape/Plin
+│       │   └── deno.json            # Imports map para Deno (esm.sh)
+│       └── ingest-transaction/
+│           ├── index.ts             # Entry point: valida token → parsea texto → inserta PENDIENTE_REVISION
+│           ├── parseText.ts         # Claude Haiku → {monto, moneda, comercio, ultimos_4, tipo}
 │           └── deno.json            # Imports map para Deno (esm.sh)
+├── AUTOMATION.md                    # Guía Make/n8n/MacroDroid para ingesta automática
 ├── docs/
 │   ├── architecture.md             # Este archivo
+│   ├── deploy-edge-function.sh     # Script workaround deploy Edge Functions (Docker bug)
+│   ├── make-blueprint-email-ingesta.json  # Blueprint Make.com importable para Gmail → ingest
 │   ├── migration_deploy.sql        # Setup inicial (profiles + trigger auth)
 │   ├── migration_v2.sql            # Motor de conciliación + triggers
 │   ├── migration_v2_patch.sql      # Correcciones RLS
@@ -89,7 +99,10 @@ family-finance-app/
 │   ├── migration_v4.sql            # Columnas multi-moneda + tabla tipos_cambio
 │   ├── migration_v5.sql            # Módulos ahorros/préstamos + presupuesto_template
 │   ├── migration_v6.sql            # seguimiento_diario + modulo_tarjetas + categorias_personalizadas
-│   └── migration_v7.sql            # transaccion_detalles (líneas de ticket) + fuente_raw
+│   ├── migration_v7.sql            # transaccion_detalles (líneas de ticket) + fuente_raw
+│   ├── migration_v8.sql            # telefono_whatsapp + operacion_id único + v_pendientes_clasificacion
+│   ├── migration_v9.sql            # v_gastos_programados_mes V9 + fn_auto_apply_recurrentes + dia_cierre
+│   └── migration_v10.sql           # ultimos_4 en tarjetas + estado en transacciones + ingest_tokens + log_errores_ingesta
 ├── hooks/
 │   └── useNotifications.ts         # Push notifications (Expo Notifications)
 ├── vercel.json                      # Build + SPA rewrite config
@@ -107,7 +120,7 @@ family-finance-app/
 | Tab | Archivo | Ícono (Ionicons) | Descripción |
 |---|---|---|---|
 | Inicio | `(tabs)/index.tsx` | `home` | Dashboard: balance, presupuestos, FAB Anotar |
-| Movimientos | `(tabs)/transacciones.tsx` | `swap-horizontal` | Historial paginado con edición inline |
+| Movimientos | `(tabs)/transacciones.tsx` | `swap-horizontal` | Historial paginado con edición inline + banner de pendientes |
 | Análisis | `(tabs)/analisis.tsx` | `bar-chart` | Resumen / Categorías / Precios / Deuda |
 | Cuentas | `(tabs)/cuentas.tsx` | `wallet` | Ahorros, tarjetas, préstamos |
 | Config | `(tabs)/mas.tsx` | `settings` | Perfil, moneda base, módulos, logout |
@@ -126,6 +139,7 @@ family-finance-app/
 | `/ahorros` | Abono / retiro / interés en cuentas de ahorro | — |
 | `/pagos` | Pago de deuda de tarjeta | — |
 | `/prestamos` | Abono de cuota de préstamo | — |
+| `/pendientes` | Revisión de gastos auto-capturados: confirmar (categorizar) o rechazar | — |
 | `/onboarding` | Completar perfil (nombre, apellido) | — |
 
 ---
@@ -169,7 +183,8 @@ Creada automáticamente por trigger al registrar en `auth.users`.
 | prestamo_id | UUID | FK prestamos (nullable) |
 | cuenta_ahorro_id | UUID | FK cuentas_ahorro (nullable) |
 | gastos_recurrentes_id | UUID | FK gastos_recurrentes (nullable) |
-| fuente | TEXT | `'manual'` / `'pago_tarjeta'` / `'abono_prestamo'` / `'ahorro_abono'` / `'ahorro_retiro'` |
+| fuente | TEXT | `'manual'` / `'pago_tarjeta'` / `'abono_prestamo'` / `'ahorro_abono'` / `'ahorro_retiro'` / `'auto_email'` / `'auto_notification'` / `'auto_whatsapp'` |
+| estado | TEXT | `'MANUAL'` (default) / `'PENDIENTE_REVISION'` / `'PROCESADO'` — V10 |
 | moneda | VARCHAR(3) | Default `'PEN'` — V4 |
 | tipo_cambio | NUMERIC(8,4) | Tasa al momento del INSERT — V4 |
 | fecha | DATE | Fecha efectiva (puede diferir de creado_en) |
@@ -204,6 +219,7 @@ Líneas de un ticket de supermercado o voucher importado.
 | fecha_corte | INTEGER | Día del mes |
 | fecha_pago | INTEGER | Día del mes |
 | dia_cierre | INTEGER | Día de cierre del ciclo de facturación — V9 |
+| ultimos_4 | VARCHAR(4) | Últimos 4 dígitos; usado por ingest-transaction para matching — V10 |
 | moneda | VARCHAR(3) | Default `'PEN'` — V4 |
 | activo | BOOLEAN | |
 
@@ -319,6 +335,32 @@ Subcategorías por usuario, vinculadas a una categoría por nombre.
 | nombre | TEXT | |
 | creado_en | TIMESTAMPTZ | |
 
+#### `ingest_tokens` (V10)
+Tokens de autenticación por dispositivo/servicio para el pipeline de ingesta automática.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| token | TEXT PK | Bearer token enviado en el header `Authorization` |
+| user_id | UUID | FK auth.users — a qué cuenta pertenece el token |
+| descripcion | TEXT | Ej: "Make.com Gmail", "MacroDroid BCP" |
+| activo | BOOLEAN | Revocar sin afectar otros tokens |
+| creado_en | TIMESTAMPTZ | |
+| ultimo_uso | TIMESTAMPTZ | Actualizado por la Edge Function en cada uso |
+
+#### `log_errores_ingesta` (V10)
+Log de textos que no pudieron parsearse o insertarse. Sin RLS — solo service_role accede.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| id | UUID PK | |
+| token | TEXT | Token que envió la petición (trazabilidad) |
+| source | TEXT | `'email'` / `'notification'` |
+| raw_text | TEXT | Texto original recibido |
+| error_tipo | TEXT | `'PARSE_FAILED'` / `'NO_MONTO'` / `'INSERT_FAILED'` / `'AUTH_FAILED'` |
+| error_msg | TEXT | |
+| parsed_partial | JSONB | Resultado parcial de la IA si lo hubo |
+| creado_en | TIMESTAMPTZ | |
+
 ### 4.2 Tablas Auxiliares
 
 #### `tipos_cambio` (V4)
@@ -368,8 +410,8 @@ Vista de gastos recurrentes y cuotas pendientes para el mes actual (`security_in
 - Para recurrentes: busca si ya existe una tx vinculada via `gastos_recurrentes_id` en el mes actual
 - Para cuotas: compara `cuota_actual` con el número de cuota esperado este mes
 
-#### `v_pendientes_clasificacion` (V8)
-Vista de transacciones con `categoria = 'Por clasificar'` del usuario autenticado. Usada para el badge de comprobantes WhatsApp sin categorizar.
+#### `v_pendientes_clasificacion` (V8, actualizada V10)
+Vista de transacciones del usuario autenticado que requieren acción: `categoria = 'Por clasificar'` (WhatsApp sin categorizar) **o** `estado = 'PENDIENTE_REVISION'` (gastos auto-capturados por email/notificación). Usada para badges de pendientes.
 
 ### 4.4 Funciones RPC
 
@@ -512,6 +554,8 @@ Hook que obtiene la tasa PEN/USD del día.
 | tipos_cambio | SELECT + INSERT + UPDATE WHERE `auth.role() = 'authenticated'` (compartida) |
 | pagos_tarjeta | ALL WHERE `auth.uid() = user_id` |
 | prestamos_abonos | ALL WHERE `auth.uid() = user_id` |
+| ingest_tokens | ALL WHERE `auth.uid() = user_id` |
+| log_errores_ingesta | Sin políticas — solo service_role (Edge Function) |
 
 **Nota crítica:** Los triggers usan `SECURITY DEFINER` porque `auth.uid()` devuelve NULL en contexto server-side.
 
@@ -533,6 +577,7 @@ Hook que obtiene la tasa PEN/USD del día.
 | `migration_v7.sql` | Tabla `transaccion_detalles` + columna `fuente_raw` en transacciones | 8 |
 | `migration_v8.sql` | `telefono_whatsapp` en profiles + `operacion_id` único en transacciones + vista `v_pendientes_clasificacion` | 9 |
 | `migration_v9.sql` | `v_gastos_programados_mes` V9 con `aplicado` dinámico (EXISTS) + `fn_auto_apply_recurrentes` RPC + `dia_cierre` en `tarjetas_credito` | 10 |
+| `migration_v10.sql` | `ultimos_4` en `tarjetas_credito` + columna `estado` en `transacciones` + tablas `ingest_tokens` y `log_errores_ingesta` + actualización `v_pendientes_clasificacion` | 11 |
 
 ---
 
@@ -548,7 +593,57 @@ Definidas en `.env.local` (no commiteado). Cargadas automáticamente por el scri
 
 ---
 
-## 11. Decisiones de Diseño Clave
+## 11. Pipeline de Ingesta Automática (V10)
+
+Permite capturar gastos desde correos bancarios o notificaciones push sin intervención manual.
+
+```
+Gmail / Notificación Android
+        │
+        │  texto crudo (raw_text)
+        ▼
+  Make.com / n8n / MacroDroid
+        │
+        │  POST /functions/v1/ingest-transaction
+        │  Authorization: Bearer <ingest_token>
+        │  { "source": "email"|"notification", "raw_text": "..." }
+        ▼
+  Edge Function: ingest-transaction (Deno)
+        │
+        ├─ Valida token → ingest_tokens → user_id
+        ├─ Claude Haiku parseText() → { monto, moneda, comercio, ultimos_4, tipo }
+        ├─ Busca tarjeta por (user_id, ultimos_4) → tarjeta_id (nullable)
+        ├─ INSERT transacciones { estado='PENDIENTE_REVISION', categoria='Por clasificar', fuente='auto_email' }
+        └─ Si falla → INSERT log_errores_ingesta; siempre retorna HTTP 200
+                │
+                ▼
+         app/pendientes.tsx
+                │
+        Usuario revisa gasto:
+        ├─ ✓ Confirmar → selecciona categoría → UPDATE estado='PROCESADO'
+        └─ ✕ Rechazar → UPDATE activo=false
+```
+
+### Autenticación del pipeline
+- Tokens en tabla `ingest_tokens` (uno por dispositivo/servicio)
+- El token mapea a un `user_id`; RLS aísla los datos por usuario
+- Revocar un token (`activo=false`) no afecta a otros servicios del mismo usuario
+
+### Edge Function: `ingest-transaction`
+- **Runtime:** Deno (Supabase Edge Functions)
+- **Deploy:** workaround EZBR+brotli documentado en `docs/deploy-edge-function.sh` (bug del Docker bundler v1.74.2)
+- **Siempre retorna HTTP 200** para evitar retries de Make/n8n ante errores de parsing
+- **Campos en `transacciones` insertados:** `monto`, `moneda`, `descripcion` (comercio), `tarjeta_id`, `fuente`, `fuente_raw`, `estado='PENDIENTE_REVISION'`, `categoria='Por clasificar'`, `tipo='gasto'`, `metodo_pago='tarjeta'`
+
+### Make.com (Gmail → Edge Function)
+- Blueprint importable en `docs/make-blueprint-email-ingesta.json`
+- Módulo Gmail filtra por `Sender email address` (ej: `notificaciones@notificacionesbcp.com.pe`)
+- `Content format: Full content` para obtener el cuerpo completo del email
+- `raw_text` mapeado con `{{X.snippet}}` + `{{X.text}}` del módulo Gmail
+
+---
+
+## 12. Decisiones de Diseño Clave
 
 | Decisión | Razón |
 |---|---|
@@ -561,9 +656,14 @@ Definidas en `.env.local` (no commiteado). Cargadas automáticamente por el scri
 | `SparklineChart` SVG puro | Sparklines de línea reales sin librerías de charts pesadas; compatible web/iOS/Android |
 | Merge `v_categorias` + `BASE_EXPENSE_CATS` | Si la vista DB no existe, la app no rompe; las categorías base siempre están disponibles |
 
+| `estado` en transacciones (no columna de destino separada) | Evita duplicar datos; el flujo de revisión usa la misma tabla con filtros por `estado` |
+| Edge Function siempre retorna 200 | Evita retries automáticos de Make/n8n que duplicarían el gasto |
+| Token por dispositivo/servicio | Revocación granular sin afectar otros pipelines del usuario |
+| `pendientes.tsx` fuera de tabs | Pantalla de revisión es temporal/modal; no merece tab permanente |
+
 ---
 
-## 12. Ejecución Local
+## 13. Ejecución Local
 
 ```bash
 npm install
