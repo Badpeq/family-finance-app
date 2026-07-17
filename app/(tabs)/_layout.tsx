@@ -9,7 +9,7 @@ function TabIcon({ name, focused }: { name: IoniconsName; focused: boolean }) {
     <Ionicons
       name={focused ? name : (`${name}-outline` as IoniconsName)}
       size={24}
-      color={focused ? '#3B82F6' : '#9CA3AF'}
+      color={focused ? '#7C3AED' : '#9CA3AF'}
     />
   );
 }
@@ -32,7 +32,7 @@ export default function TabsLayout() {
           shadowOpacity: 0.05,
           shadowRadius: 6,
         },
-        tabBarActiveTintColor:   '#3B82F6',
+        tabBarActiveTintColor:   '#7C3AED',
         tabBarInactiveTintColor: '#9CA3AF',
         tabBarLabelStyle: {
           fontSize: 11,
