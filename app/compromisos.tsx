@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { T, R, MAXW } from '@/theme';
 
 const SYM: Record<string, string> = { PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$', COP: '$', MXN: '$', ARS: '$', CLP: '$' };
 
@@ -226,21 +227,21 @@ export default function Compromisos() {
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#7C3AED" style={{ marginTop: 48 }} />
+        <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
       ) : (
-        <ScrollView contentContainerStyle={s.scroll}>
+        <ScrollView contentContainerStyle={[s.scroll, s.constrain]}>
 
           {/* Resumen */}
           <View style={s.summary}>
             <View style={s.summaryItem}>
               <Text style={s.summaryLabel}>Pendientes</Text>
-              <Text style={[s.summaryAmt, { color: '#DC2626' }]}>{sym} {totalPendiente.toFixed(2)}</Text>
+              <Text style={[s.summaryAmt, { color: T.red }]}>{sym} {totalPendiente.toFixed(2)}</Text>
               <Text style={s.summaryCount}>{pendientes.length} compromiso{pendientes.length !== 1 ? 's' : ''}</Text>
             </View>
             <View style={s.summaryDiv} />
             <View style={s.summaryItem}>
               <Text style={s.summaryLabel}>Aplicados</Text>
-              <Text style={[s.summaryAmt, { color: '#059669' }]}>{sym} {totalAplicado.toFixed(2)}</Text>
+              <Text style={[s.summaryAmt, { color: T.green }]}>{sym} {totalAplicado.toFixed(2)}</Text>
               <Text style={s.summaryCount}>{aplicados.length} compromiso{aplicados.length !== 1 ? 's' : ''}</Text>
             </View>
           </View>
@@ -306,7 +307,7 @@ export default function Compromisos() {
                 <Text style={{ fontSize: 18 }}>🚫</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[s.optTitle, { color: '#DC2626' }]}>
+                <Text style={[s.optTitle, { color: T.red }]}>
                   {actionItem?.tipo_programado === 'recurrente' ? 'Anular recurrente' : 'Eliminar cuota'}
                 </Text>
                 <Text style={s.optSub}>
@@ -406,92 +407,93 @@ export default function Compromisos() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: '#F9FAFB' },
+  safe:      { flex: 1, backgroundColor: T.screen },
+  constrain: { width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: Platform.OS === 'android' ? 44 : 12, paddingHorizontal: 20, paddingBottom: 14,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border,
   },
   backBtn:  { width: 60 },
-  backText: { fontSize: 16, color: '#3B82F6', fontWeight: '500' },
-  title:    { fontSize: 18, fontWeight: '700', color: '#111827' },
+  backText: { fontSize: 16, color: T.accent, fontWeight: '500' },
+  title:    { fontSize: 18, fontWeight: '700', color: T.textPrimary },
 
   scroll: { padding: 16 },
 
-  summary:     { backgroundColor: '#fff', borderRadius: 16, padding: 20, flexDirection: 'row', marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  summary:     { backgroundColor: T.card, borderRadius: R.card, padding: 20, flexDirection: 'row', marginBottom: 20, borderWidth: 1, borderColor: T.border },
   summaryItem: { flex: 1, alignItems: 'center' },
-  summaryLabel:{ fontSize: 11, color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  summaryLabel:{ fontSize: 11, color: T.textMicro, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   summaryAmt:  { fontSize: 20, fontWeight: '800', marginBottom: 2 },
-  summaryCount:{ fontSize: 11, color: '#9CA3AF' },
-  summaryDiv:  { width: 1, backgroundColor: '#F3F4F6', marginHorizontal: 10 },
+  summaryCount:{ fontSize: 11, color: T.textMicro },
+  summaryDiv:  { width: 1, backgroundColor: T.border, marginHorizontal: 10 },
 
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: T.textMicro, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
 
-  card:      { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
-  cardLeft:  { width: 40, height: 40, borderRadius: 10, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', marginRight: 12, flexShrink: 0 },
-  cardIcon:  { fontSize: 20 },
-  cardBody:  { flex: 1, minWidth: 0 },
+  card:        { backgroundColor: T.card, borderRadius: R.card, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: T.border },
+  cardLeft:    { width: 40, height: 40, borderRadius: 10, backgroundColor: T.screen, justifyContent: 'center', alignItems: 'center', marginRight: 12, flexShrink: 0 },
+  cardIcon:    { fontSize: 20 },
+  cardBody:    { flex: 1, minWidth: 0 },
   cardTitleRow:{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' },
-  cardName:  { fontSize: 14, fontWeight: '600', color: '#111827', flexShrink: 1 },
-  cardMeta:  { fontSize: 11, color: '#9CA3AF', marginBottom: 4 },
-  cardRight: { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
-  cardAmt:   { fontSize: 15, fontWeight: '700', marginBottom: 6 },
-  menuBtn:   { backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
-  menuBtnText:{ fontSize: 14, color: '#374151', fontWeight: '700', letterSpacing: 2 },
-  amtPending:{ color: '#DC2626' },
-  amtApplied:{ color: '#059669' },
+  cardName:    { fontSize: 14, fontWeight: '600', color: T.textPrimary, flexShrink: 1 },
+  cardMeta:    { fontSize: 11, color: T.textMicro, marginBottom: 4 },
+  cardRight:   { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
+  cardAmt:     { fontSize: 15, fontWeight: '700', marginBottom: 6 },
+  menuBtn:     { backgroundColor: T.screen, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  menuBtnText: { fontSize: 14, color: T.textSec, fontWeight: '700', letterSpacing: 2 },
+  amtPending:  { color: T.red },
+  amtApplied:  { color: T.green },
 
-  progressBg:   { height: 4, backgroundColor: '#F3F4F6', borderRadius: 2, overflow: 'hidden', marginTop: 2 },
-  progressFill: { height: '100%' as any, backgroundColor: '#7C3AED', borderRadius: 2 },
+  progressBg:   { height: 4, backgroundColor: T.border, borderRadius: 2, overflow: 'hidden', marginTop: 2 },
+  progressFill: { height: '100%' as any, backgroundColor: T.accent, borderRadius: 2 },
 
   badge:         { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  badgeRec:      { backgroundColor: '#D1FAE5' },
-  badgeRecText:  { color: '#065F46' },
+  badgeRec:      { backgroundColor: T.greenSoft },
+  badgeRecText:  { color: T.green },
   badgeCuota:    { backgroundColor: '#DBEAFE' },
   badgeCuotaText:{ color: '#1E40AF' },
   badgeText:     { fontSize: 10, fontWeight: '700' },
 
   empty:      { alignItems: 'center', paddingTop: 48, paddingHorizontal: 32 },
   emptyIcon:  { fontSize: 48, marginBottom: 14 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#374151', marginBottom: 8, textAlign: 'center' },
-  emptySub:   { fontSize: 13, color: '#9CA3AF', textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: T.textSec, marginBottom: 8, textAlign: 'center' },
+  emptySub:   { fontSize: 13, color: T.textMicro, textAlign: 'center', lineHeight: 20 },
 
   // Action sheet
-  overlay:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet:         { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: Platform.OS === 'ios' ? 36 : 16 },
-  sheetPill:     { width: 36, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
-  sheetTitle:    { fontSize: 13, fontWeight: '600', color: '#6B7280', paddingHorizontal: 20, paddingVertical: 10 },
-  sheetSep:      { height: 1, backgroundColor: '#F3F4F6' },
-  sheetOpt:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
-  optIcon:       { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  optTitle:      { fontSize: 15, fontWeight: '500', color: '#111827' },
-  optSub:        { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  sheetCancel:   { margin: 14, marginTop: 8, backgroundColor: '#F3F4F6', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  sheetCancelText: { fontSize: 15, fontWeight: '600', color: '#374151' },
+  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet:           { backgroundColor: T.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: Platform.OS === 'ios' ? 36 : 16 },
+  sheetPill:       { width: 36, height: 4, backgroundColor: T.inputBorder, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
+  sheetTitle:      { fontSize: 13, fontWeight: '600', color: T.textSec, paddingHorizontal: 20, paddingVertical: 10 },
+  sheetSep:        { height: 1, backgroundColor: T.border },
+  sheetOpt:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
+  optIcon:         { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  optTitle:        { fontSize: 15, fontWeight: '500', color: T.textPrimary },
+  optSub:          { fontSize: 12, color: T.textMicro, marginTop: 1 },
+  sheetCancel:     { margin: 14, marginTop: 8, backgroundColor: T.screen, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  sheetCancelText: { fontSize: 15, fontWeight: '600', color: T.textSec },
 
   // Edit modal
-  editSheet:     { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, width: '100%' },
+  editSheet:     { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, width: '100%' },
   sheetHead:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  closeBtn:      { fontSize: 18, color: '#9CA3AF', padding: 4 },
-  editSub:       { fontSize: 13, color: '#6B7280', marginBottom: 20 },
-  editLabel:     { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8 },
-  editInput:     { height: 52, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8, textAlign: 'center' },
-  editError:     { fontSize: 13, color: '#DC2626', marginBottom: 12 },
+  closeBtn:      { fontSize: 18, color: T.textMicro, padding: 4 },
+  editSub:       { fontSize: 13, color: T.textSec, marginBottom: 20 },
+  editLabel:     { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 8 },
+  editInput:     { height: 52, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.control, paddingHorizontal: 16, fontSize: 24, fontWeight: '700', color: T.textPrimary, marginBottom: 8, textAlign: 'center' },
+  editError:     { fontSize: 13, color: T.red, marginBottom: 12 },
   editBtns:      { flexDirection: 'row', gap: 10, marginTop: 8 },
-  editCancel:    { flex: 1, height: 48, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  editCancelText:{ fontSize: 15, color: '#374151', fontWeight: '500' },
-  editSave:      { flex: 1, height: 48, backgroundColor: '#3B82F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  editCancel:    { flex: 1, height: 48, backgroundColor: T.screen, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
+  editCancelText:{ fontSize: 15, color: T.textSec, fontWeight: '500' },
+  editSave:      { flex: 1, height: 48, backgroundColor: T.accent, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   editSaveText:  { fontSize: 15, color: '#fff', fontWeight: '600' },
 
   // Confirm dialog
   confirmBg:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  confirmBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
-  confirmTitle:      { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  confirmSub:        { fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 20 },
+  confirmBox:        { backgroundColor: T.card, borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
+  confirmTitle:      { fontSize: 16, fontWeight: '700', color: T.textPrimary, marginBottom: 10 },
+  confirmSub:        { fontSize: 13, color: T.textSec, lineHeight: 20, marginBottom: 20 },
   confirmBtns:       { flexDirection: 'row', gap: 10 },
-  confirmCancel:     { flex: 1, height: 46, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  confirmCancelText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  confirmDanger:     { flex: 1, height: 46, backgroundColor: '#DC2626', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmCancel:     { flex: 1, height: 46, backgroundColor: T.screen, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
+  confirmCancelText: { fontSize: 14, color: T.textSec, fontWeight: '500' },
+  confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 14, color: '#fff', fontWeight: '600' },
 });

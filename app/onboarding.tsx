@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { T, R } from '@/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ function ImpactBanner({
   const pct       = budgetAmt > 0 ? Math.round((used / budgetAmt) * 100) : 0;
   const remaining = Math.max(budgetAmt - amount, 0);
   const sym       = SYM[currency] ?? currency;
-  const barColor  = pct >= 90 ? '#DC2626' : pct >= 70 ? '#F59E0B' : '#22C55E';
+  const barColor  = pct >= 90 ? T.red : pct >= 70 ? T.amber : T.green;
 
   useEffect(() => {
     Animated.sequence([
@@ -102,7 +103,7 @@ function ImpactBanner({
         <Text style={s.bold}>{sym} {amount.toFixed(2)}</Text>, te queda el{' '}
         <Text style={[s.bold, { color: barColor }]}>{100 - pct}%</Text> de tu
         presupuesto de <Text style={s.bold}>{category}</Text>.{'\n\n'}
-        <Text style={[s.bold, { color: '#22C55E' }]}>{sym} {remaining.toFixed(2)} restantes</Text>
+        <Text style={[s.bold, { color: T.green }]}>{sym} {remaining.toFixed(2)} restantes</Text>
         {' '}de los <Text style={s.bold}>{sym} {budgetAmt.toFixed(2)}</Text> que definiste.
         {'\n'}¡Dale seguimiento real desde tu Dashboard!
       </Text>
@@ -351,10 +352,10 @@ export default function Onboarding() {
           {!!error && <ErrBox msg={error} />}
 
           <Lbl>Nombre</Lbl>
-          <TextInput style={s.input} placeholder="Tu nombre" placeholderTextColor="#9CA3AF"
+          <TextInput style={s.input} placeholder="Tu nombre" placeholderTextColor={T.textMicro}
             autoCapitalize="words" value={nombre} onChangeText={setNombre} editable={!loading} />
           <Lbl>Apellido</Lbl>
-          <TextInput style={s.input} placeholder="Tu apellido" placeholderTextColor="#9CA3AF"
+          <TextInput style={s.input} placeholder="Tu apellido" placeholderTextColor={T.textMicro}
             autoCapitalize="words" value={apellido} onChangeText={setApellido} editable={!loading} />
           <Lbl>Moneda base</Lbl>
           <TouchableOpacity style={s.currencyBtn} onPress={() => setShowCurrencyPicker(true)} disabled={loading}>
@@ -388,7 +389,7 @@ export default function Onboarding() {
                       <Text style={s.pickerCode}>{item.code}</Text>
                       <Text style={s.pickerLbl}>{item.label}</Text>
                     </View>
-                    {moneda === item.code && <Text style={{ color: '#3B82F6', fontSize: 18 }}>✓</Text>}
+                    {moneda === item.code && <Text style={{ color: T.accent, fontSize: 18 }}>✓</Text>}
                   </TouchableOpacity>
                 )}
                 ItemSeparatorComponent={() => <View style={s.sep} />}
@@ -416,7 +417,7 @@ export default function Onboarding() {
             <View style={s.ingresoSymBox}>
               <Text style={s.ingresoSym}>{sym}</Text>
             </View>
-            <TextInput style={s.ingresoInput} placeholder="4000" placeholderTextColor="#9CA3AF"
+            <TextInput style={s.ingresoInput} placeholder="4000" placeholderTextColor={T.textMicro}
               keyboardType="decimal-pad" value={ingreso} onChangeText={setIngreso} />
           </View>
           <Text style={s.hint}>Ingreso neto (después de impuestos)</Text>
@@ -452,10 +453,10 @@ export default function Onboarding() {
           </Text>
 
           {/* Indicador de % asignado */}
-          <View style={[s.totalBar, { borderColor: pctAssigned > 95 ? '#DC2626' : '#E5E7EB' }]}>
+          <View style={[s.totalBar, { borderColor: pctAssigned > 95 ? T.red : T.inputBorder }]}>
             <View style={{ flex: 1 }}>
               <Text style={s.totalBarLabel}>Total asignado</Text>
-              <Text style={[s.totalBarPct, { color: pctAssigned > 95 ? '#DC2626' : pctAssigned > 80 ? '#F59E0B' : '#22C55E' }]}>
+              <Text style={[s.totalBarPct, { color: pctAssigned > 95 ? T.red : pctAssigned > 80 ? T.amber : T.green }]}>
                 {pctAssigned}% del ingreso
               </Text>
             </View>
@@ -484,7 +485,7 @@ export default function Onboarding() {
                   </TouchableOpacity>
                   <Text style={[s.budIcon, !row.active && { opacity: 0.35 }]}>{row.icon}</Text>
                   <View style={s.budCatWrap}>
-                    <Text style={[s.budCat, !row.active && { color: '#9CA3AF' }]}>{row.cat}</Text>
+                    <Text style={[s.budCat, !row.active && { color: T.textMicro }]}>{row.cat}</Text>
                     {row.pct > 0 && (
                       <Text style={s.budPctLabel}>{Math.round(row.pct * 100)}%</Text>
                     )}
@@ -521,19 +522,19 @@ export default function Onboarding() {
               </TouchableOpacity>
 
               <Lbl>Nombre</Lbl>
-              <TextInput style={s.input} placeholder="Ej: Mascotas, Viajes..." placeholderTextColor="#9CA3AF"
+              <TextInput style={s.input} placeholder="Ej: Mascotas, Viajes..." placeholderTextColor={T.textMicro}
                 autoCapitalize="sentences" value={newCatName} onChangeText={setNewCatName} />
               <Lbl>{`Monto mensual (${sym})`}</Lbl>
-              <TextInput style={s.input} placeholder="0.00" placeholderTextColor="#9CA3AF"
+              <TextInput style={s.input} placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad" value={newCatAmount} onChangeText={setNewCatAmount} />
 
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: '#22C55E' }]} onPress={handleAddCustomCat}>
+                <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: T.green }]} onPress={handleAddCustomCat}>
                   <Text style={s.btnText}>Agregar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: '#F3F4F6' }]}
+                <TouchableOpacity style={[s.btn, { flex: 1, backgroundColor: T.screen }]}
                   onPress={() => { setShowAddCat(false); setNewCatName(''); setNewCatAmount(''); setError(''); }}>
-                  <Text style={[s.btnText, { color: '#374151' }]}>Cancelar</Text>
+                  <Text style={[s.btnText, { color: T.textSec }]}>Cancelar</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -640,12 +641,12 @@ export default function Onboarding() {
 
           <Lbl>{`¿Qué compraste? (categoría: ${catLabel})`}</Lbl>
           <TextInput style={s.input} placeholder="Ej: Almuerzo, café, mercado..."
-            placeholderTextColor="#9CA3AF" autoCapitalize="sentences"
+            placeholderTextColor={T.textMicro} autoCapitalize="sentences"
             value={wowItem} onChangeText={setWowItem} />
 
           <Lbl>{`¿Cuánto costó? (${sym})`}</Lbl>
           <TextInput style={s.input} placeholder="Ej: 20"
-            placeholderTextColor="#9CA3AF" keyboardType="decimal-pad"
+            placeholderTextColor={T.textMicro} keyboardType="decimal-pad"
             value={wowAmount} onChangeText={setWowAmount} />
 
           <TouchableOpacity style={[s.btn, { marginTop: 12 }]} onPress={handleWowNext}>
@@ -700,114 +701,114 @@ function ErrBox({ msg }: { msg: string }) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  flex:    { flex: 1, backgroundColor: '#F9FAFB' },
-  center:  { flex: 1, backgroundColor: '#F9FAFB', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  flex:    { flex: 1, backgroundColor: T.screen },
+  center:  { flex: 1, backgroundColor: T.screen, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   inner:   { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
   impactWrap: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 40 },
 
-  wowTitle: { fontSize: 32, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 12 },
-  wowSub:   { fontSize: 17, color: '#6B7280', textAlign: 'center', lineHeight: 26, marginBottom: 40 },
+  wowTitle: { fontSize: 32, fontWeight: '800', color: T.textPrimary, textAlign: 'center', marginBottom: 12 },
+  wowSub:   { fontSize: 17, color: T.textSec, textAlign: 'center', lineHeight: 26, marginBottom: 40 },
 
   stepRow:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  stepDot:    { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E5E7EB' },
-  stepDotOn:  { backgroundColor: '#7C3AED' },
-  stepText:   { fontSize: 11, fontWeight: '600', color: '#7C3AED', textTransform: 'uppercase', letterSpacing: 0.8, marginLeft: 4 },
+  stepDot:    { width: 8, height: 8, borderRadius: 4, backgroundColor: T.inputBorder },
+  stepDotOn:  { backgroundColor: T.accent },
+  stepText:   { fontSize: 11, fontWeight: '600', color: T.accent, textTransform: 'uppercase', letterSpacing: 0.8, marginLeft: 4 },
 
-  title:  { fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 6 },
-  sub:    { fontSize: 14, color: '#6B7280', lineHeight: 21, marginBottom: 20 },
-  hint:   { fontSize: 12, color: '#9CA3AF', marginTop: 6 },
-  bold:   { fontWeight: '700', color: '#111827' },
-  label:  { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 },
-  input:  { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, fontSize: 16, color: '#111827', marginBottom: 14 },
-  errBox: { backgroundColor: '#FEE2E2', borderRadius: 8, padding: 12, marginBottom: 12 },
-  errText:{ color: '#DC2626', fontSize: 14 },
-  sep:    { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
+  title:  { fontSize: 26, fontWeight: '700', color: T.textPrimary, marginBottom: 6 },
+  sub:    { fontSize: 14, color: T.textSec, lineHeight: 21, marginBottom: 20 },
+  hint:   { fontSize: 12, color: T.textMicro, marginTop: 6 },
+  bold:   { fontWeight: '700', color: T.textPrimary },
+  label:  { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 6 },
+  input:  { height: 52, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.control, paddingHorizontal: 16, fontSize: 16, color: T.textPrimary, marginBottom: 14 },
+  errBox: { backgroundColor: T.redSoft, borderRadius: 8, padding: 12, marginBottom: 12 },
+  errText:{ color: T.red, fontSize: 14 },
+  sep:    { height: 1, backgroundColor: T.border, marginHorizontal: 20 },
 
-  btn:       { height: 52, backgroundColor: '#3B82F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  btn:       { height: 52, backgroundColor: T.accent, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   btnOff:    { opacity: 0.6 },
   btnText:   { color: '#fff', fontSize: 16, fontWeight: '600' },
-  finishBtn: { backgroundColor: '#7C3AED', marginTop: 24 },
+  finishBtn: { backgroundColor: T.accent, marginTop: 24 },
   skipBtn:   { marginTop: 14, alignItems: 'center', paddingVertical: 10 },
-  skipBtnText:{ fontSize: 14, color: '#9CA3AF', textDecorationLine: 'underline' },
-  finishNote:{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginTop: 12 },
+  skipBtnText:{ fontSize: 14, color: T.textMicro, textDecorationLine: 'underline' },
+  finishNote:{ fontSize: 12, color: T.textMicro, textAlign: 'center', marginTop: 12 },
 
-  currencyBtn:  { height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 },
-  currencyCode: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  currencyLbl:  { fontSize: 15, color: '#6B7280' },
-  chevron:      { fontSize: 20, color: '#9CA3AF' },
+  currencyBtn:  { height: 52, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.control, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 },
+  currencyCode: { fontSize: 15, fontWeight: '700', color: T.textPrimary },
+  currencyLbl:  { fontSize: 15, color: T.textSec },
+  chevron:      { fontSize: 20, color: T.textMicro },
 
-  ingresoRow:    { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, backgroundColor: '#fff', overflow: 'hidden', marginBottom: 8 },
-  ingresoSymBox: { paddingHorizontal: 16, height: 56, justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
-  ingresoSym:    { fontSize: 18, fontWeight: '700', color: '#374151' },
-  ingresoInput:  { flex: 1, height: 56, paddingHorizontal: 16, fontSize: 24, fontWeight: '700', color: '#111827' },
+  ingresoRow:    { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.control, backgroundColor: T.input, overflow: 'hidden', marginBottom: 8 },
+  ingresoSymBox: { paddingHorizontal: 16, height: 56, justifyContent: 'center', borderRightWidth: 1, borderRightColor: T.inputBorder, backgroundColor: T.screen },
+  ingresoSym:    { fontSize: 18, fontWeight: '700', color: T.textSec },
+  ingresoInput:  { flex: 1, height: 56, paddingHorizontal: 16, fontSize: 24, fontWeight: '700', color: T.textPrimary },
 
   // Total bar
-  totalBar:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, borderWidth: 1.5, marginBottom: 12 },
-  totalBarLabel: { fontSize: 12, color: '#6B7280', marginBottom: 2 },
+  totalBar:      { flexDirection: 'row', alignItems: 'center', backgroundColor: T.card, borderRadius: R.control, padding: 14, borderWidth: 1.5, marginBottom: 12 },
+  totalBarLabel: { fontSize: 12, color: T.textSec, marginBottom: 2 },
   totalBarPct:   { fontSize: 16, fontWeight: '800' },
-  totalBarAmt:   { fontSize: 18, fontWeight: '700', color: '#111827' },
+  totalBarAmt:   { fontSize: 18, fontWeight: '700', color: T.textPrimary },
 
-  ruleChip:     { backgroundColor: '#EDE9FE', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 20 },
-  ruleChipText: { fontSize: 12, color: '#5B21B6', lineHeight: 18 },
+  ruleChip:     { backgroundColor: T.accentSoft, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 20 },
+  ruleChipText: { fontSize: 12, color: T.accentDark, lineHeight: 18 },
 
-  groupLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8, marginTop: 4 },
+  groupLabel: { fontSize: 11, fontWeight: '700', color: T.textMicro, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8, marginTop: 4 },
 
   // Budget rows
-  budRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#F3F4F6', gap: 8 },
-  budRowOff:   { backgroundColor: '#F9FAFB', borderColor: '#F3F4F6' },
+  budRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: T.card, borderRadius: R.control, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: T.border, gap: 8 },
+  budRowOff:   { backgroundColor: T.screen, borderColor: T.border },
   budToggle:   { padding: 2 },
-  checkBox:    { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB', justifyContent: 'center', alignItems: 'center' },
-  checkBoxOn:  { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  checkBox:    { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: T.inputBorder, justifyContent: 'center', alignItems: 'center' },
+  checkBoxOn:  { backgroundColor: T.accent, borderColor: T.accent },
   budIcon:     { fontSize: 20 },
   budCatWrap:  { flex: 1, minWidth: 0 },
-  budCat:      { fontSize: 13, fontWeight: '600', color: '#111827' },
-  budPctLabel: { fontSize: 10, color: '#9CA3AF', marginTop: 1 },
-  budAmtWrap:  { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, backgroundColor: '#F9FAFB', paddingHorizontal: 8, height: 38 },
-  budAmtSym:   { fontSize: 12, fontWeight: '600', color: '#6B7280', marginRight: 2 },
-  budAmtInput: { fontSize: 14, fontWeight: '700', color: '#111827', minWidth: 64, textAlign: 'right' },
+  budCat:      { fontSize: 13, fontWeight: '600', color: T.textPrimary },
+  budPctLabel: { fontSize: 10, color: T.textMicro, marginTop: 1 },
+  budAmtWrap:  { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: T.inputBorder, borderRadius: 8, backgroundColor: T.input, paddingHorizontal: 8, height: 38 },
+  budAmtSym:   { fontSize: 12, fontWeight: '600', color: T.textSec, marginRight: 2 },
+  budAmtInput: { fontSize: 14, fontWeight: '700', color: T.textPrimary, minWidth: 64, textAlign: 'right' },
 
   // Add category
-  addCatBtn:     { borderWidth: 1.5, borderColor: '#7C3AED', borderStyle: 'dashed', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
-  addCatBtnText: { fontSize: 14, color: '#7C3AED', fontWeight: '600' },
-  addCatForm:    { backgroundColor: '#F5F3FF', borderRadius: 14, padding: 16, marginTop: 8, borderWidth: 1, borderColor: '#DDD6FE' },
-  iconPickerBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, backgroundColor: '#fff', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#E5E7EB' },
-  iconPickerLabel:{ fontSize: 14, color: '#7C3AED', fontWeight: '500' },
+  addCatBtn:     { borderWidth: 1.5, borderColor: T.accent, borderStyle: 'dashed', borderRadius: R.control, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  addCatBtnText: { fontSize: 14, color: T.accent, fontWeight: '600' },
+  addCatForm:    { backgroundColor: T.accentSoft, borderRadius: 14, padding: 16, marginTop: 8, borderWidth: 1, borderColor: T.accentSoft },
+  iconPickerBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, backgroundColor: T.card, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: T.inputBorder },
+  iconPickerLabel:{ fontSize: 14, color: T.accent, fontWeight: '500' },
   iconModalBg:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  iconModalBox:  { backgroundColor: '#fff', borderRadius: 20, padding: 20, width: '100%', maxWidth: 320 },
+  iconModalBox:  { backgroundColor: T.card, borderRadius: 20, padding: 20, width: '100%', maxWidth: 320 },
   iconGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
-  iconOpt:       { width: 52, height: 52, borderRadius: 12, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  iconOptOn:     { backgroundColor: '#EDE9FE', borderWidth: 2, borderColor: '#7C3AED' },
+  iconOpt:       { width: 52, height: 52, borderRadius: 12, backgroundColor: T.screen, justifyContent: 'center', alignItems: 'center' },
+  iconOptOn:     { backgroundColor: T.accentSoft, borderWidth: 2, borderColor: T.accent },
 
   // Módulos yes/no cards
-  moduloCard:  { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 14, borderWidth: 1, borderColor: '#F3F4F6', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  moduloCard:  { backgroundColor: T.card, borderRadius: R.card, padding: 20, marginBottom: 14, borderWidth: 1, borderColor: T.border },
   moduloIcon:  { fontSize: 32, marginBottom: 8 },
-  moduloTitle: { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 4 },
-  moduloSub:   { fontSize: 13, color: '#6B7280', lineHeight: 19, marginBottom: 16 },
+  moduloTitle: { fontSize: 17, fontWeight: '700', color: T.textPrimary, marginBottom: 4 },
+  moduloSub:   { fontSize: 13, color: T.textSec, lineHeight: 19, marginBottom: 16 },
   yesNoRow:    { flexDirection: 'row', gap: 10 },
-  yesNoBtn:    { flex: 1, height: 42, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' },
-  yesNoBtnOn:  { backgroundColor: '#EDE9FE', borderColor: '#7C3AED' },
-  yesNoBtnOff: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
-  yesNoText:   { fontSize: 14, fontWeight: '600', color: '#6B7280' },
-  yesNoTextOn: { color: '#7C3AED' },
-  yesNoTextOff:{ color: '#DC2626' },
+  yesNoBtn:    { flex: 1, height: 42, borderRadius: 10, borderWidth: 1.5, borderColor: T.inputBorder, justifyContent: 'center', alignItems: 'center', backgroundColor: T.input },
+  yesNoBtnOn:  { backgroundColor: T.accentSoft, borderColor: T.accent },
+  yesNoBtnOff: { backgroundColor: T.redSoft, borderColor: T.red },
+  yesNoText:   { fontSize: 14, fontWeight: '600', color: T.textSec },
+  yesNoTextOn: { color: T.accent },
+  yesNoTextOff:{ color: T.red },
 
   // Impact banner
-  bannerCard:  { backgroundColor: '#fff', borderRadius: 20, padding: 24, borderLeftWidth: 4, borderLeftColor: '#7C3AED', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 8 },
+  bannerCard:  { backgroundColor: T.card, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: T.border, borderLeftWidth: 4, borderLeftColor: T.accent },
   bannerEmoji: { fontSize: 36, textAlign: 'center', marginBottom: 10 },
-  bannerTitle: { fontSize: 20, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 14 },
-  bannerText:  { fontSize: 15, color: '#374151', lineHeight: 24, textAlign: 'center', marginBottom: 20 },
-  barBg:       { height: 10, backgroundColor: '#F3F4F6', borderRadius: 5, overflow: 'hidden', marginBottom: 6 },
+  bannerTitle: { fontSize: 20, fontWeight: '800', color: T.textPrimary, textAlign: 'center', marginBottom: 14 },
+  bannerText:  { fontSize: 15, color: T.textSec, lineHeight: 24, textAlign: 'center', marginBottom: 20 },
+  barBg:       { height: 10, backgroundColor: T.border, borderRadius: 5, overflow: 'hidden', marginBottom: 6 },
   barFill:     { height: '100%', borderRadius: 5 },
   barLabels:   { flexDirection: 'row', justifyContent: 'space-between' },
-  barLbl:      { fontSize: 11, color: '#9CA3AF' },
+  barLbl:      { fontSize: 11, color: T.textMicro },
 
   // Currency modal
   pickerBg:    { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  pickerSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%', paddingBottom: 24 },
-  pickerHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  pickerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  pickerClose: { fontSize: 15, color: '#3B82F6', fontWeight: '500' },
+  pickerSheet: { backgroundColor: T.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%', paddingBottom: 24 },
+  pickerHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: T.border },
+  pickerTitle: { fontSize: 16, fontWeight: '600', color: T.textPrimary },
+  pickerClose: { fontSize: 15, color: T.accent, fontWeight: '500' },
   pickerOpt:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 },
-  pickerCode:  { fontSize: 15, fontWeight: '600', color: '#111827' },
-  pickerLbl:   { fontSize: 13, color: '#6B7280', marginTop: 1 },
+  pickerCode:  { fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  pickerLbl:   { fontSize: 13, color: T.textSec, marginTop: 1 },
 });

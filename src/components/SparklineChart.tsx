@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 import Svg, { Polyline, Path, Circle } from 'react-native-svg';
+import { T } from '@/theme';
 
 interface Props {
   values:      number[];
@@ -13,7 +14,7 @@ interface Props {
 
 export default function SparklineChart({
   values,
-  color       = '#3B82F6',
+  color       = T.accent,
   width       = 80,
   height      = 36,
   filled      = true,

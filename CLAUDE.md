@@ -15,6 +15,15 @@
   en políticas (evita recursión RLS). No escribir subqueries directas a hogar_miembros
   dentro de sus propias políticas.
 
+## Design tokens (OBLIGATORIO desde V11)
+Importar siempre de `src/theme.ts`. Nunca hardcodear colores en pantallas o componentes.
+- `T.screen` fondo de pantalla, `T.card` superficie blanca, `T.border` hairline
+- `T.accent` / `T.accentSoft` / `T.accentDark` — violeta; **eliminar todo #3B82F6 (azul)**
+- `T.green` / `T.red` / `T.amber` semánticos; `T.textPrimary` / `T.textSec` / `T.textMicro` texto
+- `R.card = 18` radio de cards; `MAXW = 640` ancho máximo de contenido
+- Patrón constrain: `{ width: '100%', maxWidth: MAXW, alignSelf: 'center' }` en toda pantalla
+- Cards: `backgroundColor: T.card, borderRadius: R.card, borderWidth: 1, borderColor: T.border` — sin `elevation` ni `shadowColor`
+
 ## Convenciones
 - Textos de UI en español (es-PE). Moneda base PEN, formateo S/ 1,234.56.
 - Componentes reutilizables en src/components/, hooks en src/hooks/.

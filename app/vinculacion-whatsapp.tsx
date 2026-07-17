@@ -21,18 +21,9 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { T, R, MAXW } from '@/theme';
 
-const C = {
-  hero:    '#080C10',
-  screen:  '#F7F8FA',
-  card:    '#FFFFFF',
-  accent:  '#3B82F6',
-  success: '#22C55E',
-  danger:  '#EF4444',
-  text:    '#111827',
-  muted:   '#6B7280',
-  border:  '#E5E7EB',
-};
+const HERO_BG = '#080C10';
 
 // Número de WhatsApp Business configurado en la app (se puede mover a .env)
 const WA_BUSINESS_NUMBER = '51900000000'; // ← Reemplazar con tu número real
@@ -139,7 +130,7 @@ export default function VinculacionWhatsApp() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color={C.accent} />
+        <ActivityIndicator color={T.accent} />
       </View>
     );
   }
@@ -159,11 +150,11 @@ export default function VinculacionWhatsApp() {
       {/* Badge de pendientes */}
       {pendientes > 0 && (
         <TouchableOpacity style={styles.pendientesBanner}>
-          <Ionicons name="alert-circle" size={18} color="#92400E" />
+          <Ionicons name="alert-circle" size={18} color={T.amber} />
           <Text style={styles.pendientesText}>
             {pendientes} gasto{pendientes > 1 ? 's' : ''} sin categoría — tócalo para clasificar
           </Text>
-          <Ionicons name="chevron-forward" size={16} color="#92400E" />
+          <Ionicons name="chevron-forward" size={16} color={T.amber} />
         </TouchableOpacity>
       )}
 
@@ -178,20 +169,20 @@ export default function VinculacionWhatsApp() {
             value={telefono.replace(/^51/, '')}
             onChangeText={t => setTelefono(t.replace(/\D/g, ''))}
             placeholder="987 654 321"
-            placeholderTextColor={C.muted}
+            placeholderTextColor={T.textSec}
             keyboardType="phone-pad"
             maxLength={9}
           />
           {vinculado && (
-            <Ionicons name="checkmark-circle" size={22} color={C.success} style={{ marginLeft: 8 }} />
+            <Ionicons name="checkmark-circle" size={22} color={T.green} style={{ marginLeft: 8 }} />
           )}
         </View>
 
         {vinculado ? (
           <View style={styles.vinculadoRow}>
-            <View style={[styles.badge, { backgroundColor: '#DCFCE7' }]}>
-              <Ionicons name="wifi" size={14} color={C.success} />
-              <Text style={[styles.badgeText, { color: '#166534' }]}>Vinculado</Text>
+            <View style={[styles.badge, { backgroundColor: T.greenSoft }]}>
+              <Ionicons name="wifi" size={14} color={T.green} />
+              <Text style={[styles.badgeText, { color: T.green }]}>Vinculado</Text>
             </View>
             <TouchableOpacity onPress={handleDesvincular}>
               <Text style={styles.desvincularLink}>Desvincular</Text>
@@ -248,13 +239,13 @@ const STEPS = [
 ];
 
 const styles = StyleSheet.create({
-  screen:  { flex: 1, backgroundColor: C.screen },
-  content: { padding: 16, paddingBottom: 40 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  screen:    { flex: 1, backgroundColor: T.screen },
+  content:   { padding: 16, paddingBottom: 40, width: '100%', maxWidth: MAXW, alignSelf: 'center' },
+  centered:  { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   hero: {
-    backgroundColor: C.hero,
-    borderRadius: 20,
+    backgroundColor: HERO_BG,
+    borderRadius: R.card,
     padding: 24,
     alignItems: 'center',
     marginBottom: 16,
@@ -266,38 +257,38 @@ const styles = StyleSheet.create({
   pendientesBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderRadius: 12,
+    backgroundColor: T.amberSoft,
+    borderRadius: R.control,
     padding: 12,
     marginBottom: 12,
     gap: 8,
   },
-  pendientesText: { flex: 1, fontSize: 13, color: '#92400E', fontWeight: '500' },
+  pendientesText: { flex: 1, fontSize: 13, color: T.amber, fontWeight: '500' },
 
-  card:      { backgroundColor: C.card, borderRadius: 16, padding: 16, marginBottom: 12 },
-  cardLabel: { fontSize: 13, color: C.muted, marginBottom: 10, fontWeight: '500' },
+  card:      { backgroundColor: T.card, borderRadius: R.card, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: T.border },
+  cardLabel: { fontSize: 13, color: T.textSec, marginBottom: 10, fontWeight: '500' },
 
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 10,
+    borderColor: T.inputBorder,
+    borderRadius: R.control,
     paddingHorizontal: 12,
     height: 48,
     marginBottom: 12,
   },
-  prefix: { fontSize: 16, color: C.text, marginRight: 6, fontWeight: '500' },
-  input:  { flex: 1, fontSize: 16, color: C.text },
+  prefix: { fontSize: 16, color: T.textPrimary, marginRight: 6, fontWeight: '500' },
+  input:  { flex: 1, fontSize: 16, color: T.textPrimary },
 
   vinculadoRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  badge:          { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  badge:          { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: R.chip, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText:      { fontSize: 12, fontWeight: '600' },
-  desvincularLink:{ fontSize: 13, color: C.danger, fontWeight: '500' },
+  desvincularLink:{ fontSize: 13, color: T.red, fontWeight: '500' },
 
   btn: {
-    backgroundColor: C.accent,
-    borderRadius: 10,
+    backgroundColor: T.accent,
+    borderRadius: R.control,
     height: 46,
     justifyContent: 'center',
     alignItems: 'center',
@@ -305,23 +296,23 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.6 },
   btnText:     { color: '#fff', fontWeight: '600', fontSize: 15 },
 
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 14 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: T.textPrimary, marginBottom: 14 },
   step:         { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, gap: 10 },
-  stepNum:      { width: 24, height: 24, borderRadius: 12, backgroundColor: C.accent, justifyContent: 'center', alignItems: 'center' },
+  stepNum:      { width: 24, height: 24, borderRadius: 12, backgroundColor: T.accent, justifyContent: 'center', alignItems: 'center' },
   stepNumText:  { color: '#fff', fontSize: 12, fontWeight: '700' },
-  stepText:     { flex: 1, fontSize: 14, color: C.text, lineHeight: 20 },
+  stepText:     { flex: 1, fontSize: 14, color: T.textPrimary, lineHeight: 20 },
 
   waBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#25D366',
-    borderRadius: 12,
+    borderRadius: R.control,
     height: 50,
     gap: 8,
     marginBottom: 16,
   },
   waBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-  privacidad: { fontSize: 12, color: C.muted, textAlign: 'center', lineHeight: 18 },
+  privacidad: { fontSize: 12, color: T.textSec, textAlign: 'center', lineHeight: 18 },
 });

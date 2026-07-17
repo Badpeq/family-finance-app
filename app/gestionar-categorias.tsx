@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { T, R, MAXW } from '@/theme';
 
 const BASE_CATS = [
   { nombre: 'Alimentación', icono: '🛒' },
@@ -132,7 +133,7 @@ export default function GestionarCategorias() {
   if (loading) {
     return (
       <View style={s.center}>
-        <ActivityIndicator color="#7C3AED" />
+        <ActivityIndicator color={T.accent} />
       </View>
     );
   }
@@ -156,7 +157,7 @@ export default function GestionarCategorias() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll}>
+      <ScrollView contentContainerStyle={[s.scroll, s.constrain]}>
         <Text style={s.hint}>
           Toca una categoría para ver y gestionar sus subcategorías.
         </Text>
@@ -317,69 +318,69 @@ export default function GestionarCategorias() {
 }
 
 const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: '#F9FAFB' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  safe:      { flex: 1, backgroundColor: T.screen },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  constrain: { width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: Platform.OS === 'android' ? 44 : 12, paddingHorizontal: 20, paddingBottom: 14,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  backBtn:  { width: 60 },
-  backText: { fontSize: 16, color: '#3B82F6', fontWeight: '500' },
-  title:    { fontSize: 18, fontWeight: '700', color: '#111827' },
-  addBtn:   { width: 70, alignItems: 'flex-end' },
-  addBtnText:{ fontSize: 14, color: '#7C3AED', fontWeight: '600' },
+  backBtn:   { width: 60 },
+  backText:  { fontSize: 16, color: T.accent, fontWeight: '500' },
+  title:     { fontSize: 18, fontWeight: '700', color: T.textPrimary },
+  addBtn:    { width: 70, alignItems: 'flex-end' },
+  addBtnText:{ fontSize: 14, color: T.accent, fontWeight: '600' },
 
   scroll: { padding: 16 },
-  hint:   { fontSize: 12, color: '#9CA3AF', marginBottom: 14, lineHeight: 17 },
+  hint:   { fontSize: 12, color: T.textMicro, marginBottom: 14, lineHeight: 17 },
 
   catBlock: {
-    backgroundColor: '#fff', borderRadius: 14, marginBottom: 8,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
-    overflow: 'hidden',
+    backgroundColor: T.card, borderRadius: R.card, marginBottom: 8,
+    borderWidth: 1, borderColor: T.border, overflow: 'hidden',
   },
   catRow: {
     flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10,
   },
   catIcon:     { fontSize: 22, width: 28, textAlign: 'center' },
-  catName:     { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
-  customBadge: { fontSize: 10, color: '#7C3AED', backgroundColor: '#EDE9FE', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, fontWeight: '600' },
-  subcatCount: { fontSize: 11, color: '#9CA3AF', marginRight: 4 },
-  chevron:     { fontSize: 12, color: '#9CA3AF' },
+  catName:     { flex: 1, fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  customBadge: { fontSize: 10, color: T.accent, backgroundColor: T.accentSoft, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, fontWeight: '600' },
+  subcatCount: { fontSize: 11, color: T.textMicro, marginRight: 4 },
+  chevron:     { fontSize: 12, color: T.textMicro },
   delCatBtn:   { marginLeft: 8, padding: 4 },
-  delCatIcon:  { fontSize: 14, color: '#EF4444' },
+  delCatIcon:  { fontSize: 14, color: T.red },
 
-  subList:    { borderTopWidth: 1, borderTopColor: '#F3F4F6', padding: 12, paddingTop: 8 },
-  noSubs:     { fontSize: 12, color: '#9CA3AF', marginBottom: 8, fontStyle: 'italic' },
-  subRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  subName:    { fontSize: 14, color: '#374151', flex: 1 },
-  delSubIcon: { fontSize: 12, color: '#9CA3AF' },
-  addSubBtn:  { marginTop: 8, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: '#F3F4F6' },
-  addSubText: { fontSize: 13, color: '#7C3AED', fontWeight: '600' },
+  subList:    { borderTopWidth: 1, borderTopColor: T.border, padding: 12, paddingTop: 8 },
+  noSubs:     { fontSize: 12, color: T.textMicro, marginBottom: 8, fontStyle: 'italic' },
+  subRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.border },
+  subName:    { fontSize: 14, color: T.textSec, flex: 1 },
+  delSubIcon: { fontSize: 12, color: T.textMicro },
+  addSubBtn:  { marginTop: 8, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: T.screen },
+  addSubText: { fontSize: 13, color: T.accent, fontWeight: '600' },
 
   modalBg:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' },
-  modalHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  modalClose: { fontSize: 14, color: '#3B82F6', fontWeight: '500' },
+  modalSheet: { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' },
+  modalHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: T.border },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: T.textPrimary },
+  modalClose: { fontSize: 14, color: T.accent, fontWeight: '500' },
   modalBody:  { padding: 20, paddingBottom: 36 },
 
-  lbl:     { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8, marginTop: 12 },
-  inp:     { height: 48, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 14, fontSize: 15, color: '#111827', marginBottom: 4 },
-  iconOpt: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
-  iconOptOn:{ borderWidth: 2, borderColor: '#7C3AED', backgroundColor: '#EDE9FE' },
-  err:     { color: '#DC2626', fontSize: 13, marginTop: 6 },
-  saveBtn: { height: 50, backgroundColor: '#7C3AED', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
+  lbl:      { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 8, marginTop: 12 },
+  inp:      { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: 10, paddingHorizontal: 14, fontSize: 15, color: T.textPrimary, marginBottom: 4 },
+  iconOpt:  { width: 40, height: 40, borderRadius: 10, backgroundColor: T.screen, justifyContent: 'center', alignItems: 'center' },
+  iconOptOn:{ borderWidth: 2, borderColor: T.accent, backgroundColor: T.accentSoft },
+  err:      { color: T.red, fontSize: 13, marginTop: 6 },
+  saveBtn:  { height: 50, backgroundColor: T.accent, borderRadius: R.control, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   saveBtnText:{ color: '#fff', fontSize: 15, fontWeight: '600' },
 
   confirmBg:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  confirmBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 340 },
-  confirmTitle:      { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 8 },
-  confirmSub:        { fontSize: 13, color: '#6B7280', lineHeight: 19, marginBottom: 20 },
+  confirmBox:        { backgroundColor: T.card, borderRadius: 20, padding: 24, width: '100%', maxWidth: 340 },
+  confirmTitle:      { fontSize: 16, fontWeight: '700', color: T.textPrimary, marginBottom: 8 },
+  confirmSub:        { fontSize: 13, color: T.textSec, lineHeight: 19, marginBottom: 20 },
   confirmBtns:       { flexDirection: 'row', gap: 10 },
-  confirmCancel:     { flex: 1, height: 46, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  confirmCancelText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  confirmDanger:     { flex: 1, height: 46, backgroundColor: '#DC2626', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmCancel:     { flex: 1, height: 46, backgroundColor: T.screen, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
+  confirmCancelText: { fontSize: 14, color: T.textSec, fontWeight: '500' },
+  confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 14, color: '#fff', fontWeight: '600' },
 });

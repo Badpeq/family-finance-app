@@ -6,6 +6,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { DatePickerInput } from '@/components/DatePickerInput';
+import { T, R, MAXW } from '@/theme';
 
 interface Tarjeta  { id:string; banco:string; nombre_tarjeta:string; deuda_actual:number; linea_credito:number; dia_cierre:number|null }
 interface Prestamo { id:string; entidad_persona:string; tipo:'recibido'|'otorgado'; saldo_pendiente:number; monto_mensual:number; cuotas_estimadas:number|null; cuotas_pagadas:number }
@@ -19,7 +20,7 @@ const BANK_COLORS: Record<string,string> = {
 
 function bankColor(banco: string) {
   const key = Object.keys(BANK_COLORS).find(k => banco.toLowerCase().includes(k.toLowerCase()));
-  return key ? BANK_COLORS[key] : '#374151';
+  return key ? BANK_COLORS[key] : T.textSec;
 }
 
 export default function Cuentas() {
@@ -279,15 +280,15 @@ export default function Cuentas() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
-      <SafeAreaView style={{ backgroundColor: '#F8F9FB' }}>
+    <View style={{ flex: 1, backgroundColor: T.screen }}>
+      <SafeAreaView style={{ backgroundColor: T.screen }}>
         <View style={styles.header}>
           <Text style={styles.title}>Mis Cuentas</Text>
         </View>
       </SafeAreaView>
 
       {loading ? (
-        <ActivityIndicator color="#3B82F6" style={{ marginTop: 60 }} />
+        <ActivityIndicator color={T.accent} style={{ marginTop: 60 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
@@ -315,7 +316,7 @@ export default function Cuentas() {
           </SectionCard>
 
           {/* ── Tarjetas ── */}
-          <SectionCard title="💳 Tarjetas de Crédito" value={fmt(totalDeuda)} color="#DC2626">
+          <SectionCard title="💳 Tarjetas de Crédito" value={fmt(totalDeuda)} color={T.red}>
             {tarjetas.length === 0 ? (
               <Text style={styles.empty}>Sin tarjetas. Toca ＋ para agregar una.</Text>
             ) : tarjetas.map((t, i) => {
@@ -332,7 +333,7 @@ export default function Cuentas() {
                     <View style={{ flex:1 }}>
                       <Text style={styles.prodName}>{t.nombre_tarjeta}</Text>
                       <View style={styles.barBg}>
-                        <View style={[styles.barFill, { width:`${Math.round(pct*100)}%` as any, backgroundColor: pct >= 0.9 ? '#DC2626' : pct >= 0.7 ? '#F59E0B' : '#6B7280' }]} />
+                        <View style={[styles.barFill, { width:`${Math.round(pct*100)}%` as any, backgroundColor: pct >= 0.9 ? T.red : pct >= 0.7 ? T.amber : T.textSec }]} />
                       </View>
                       <View style={{ flexDirection:'row', justifyContent:'space-between', marginTop:3 }}>
                         <Text style={styles.miniLabel}>Deuda: {fmt(Number(t.deuda_actual))}</Text>
@@ -379,7 +380,7 @@ export default function Cuentas() {
                         {ciclo ? (
                           ciclo.sincronizando ? (
                             <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginTop:8 }}>
-                              <ActivityIndicator size="small" color="#DC2626" />
+                              <ActivityIndicator size="small" color={T.red} />
                               <Text style={styles.cicloSub}>Calculando…</Text>
                             </View>
                           ) : (
@@ -389,7 +390,7 @@ export default function Cuentas() {
                                 <Text style={styles.cicloSub}>Gastado en el ciclo</Text>
                                 {ciclo.proyectado > ciclo.total + 0.01 && (
                                   <>
-                                    <Text style={[styles.cicloTotal, { fontSize:14, color:'#DC2626', marginTop:6 }]}>
+                                    <Text style={[styles.cicloTotal, { fontSize:14, color:T.red, marginTop:6 }]}>
                                       {fmt(ciclo.proyectado)}
                                     </Text>
                                     <Text style={styles.cicloSub}>Proyectado al cierre (fijos + run-rate var.)</Text>
@@ -413,12 +414,12 @@ export default function Cuentas() {
               );
             })}
             <TouchableOpacity style={styles.sectionFooter} onPress={() => router.push(`/pagos?moneda=${currency}`)}>
-              <Text style={{ color:'#DC2626', fontWeight:'600', fontSize:13 }}>Pagar tarjeta →</Text>
+              <Text style={{ color:T.red, fontWeight:'600', fontSize:13 }}>Pagar tarjeta →</Text>
             </TouchableOpacity>
           </SectionCard>
 
           {/* ── Préstamos ── */}
-          <SectionCard title="📋 Préstamos Activos" value={fmt(totalPrestamo)} color="#7C3AED">
+          <SectionCard title="📋 Préstamos Activos" value={fmt(totalPrestamo)} color={T.accent}>
             {prestamos.length === 0 ? (
               <Text style={styles.empty}>Sin préstamos activos. Toca ＋ para registrar uno.</Text>
             ) : prestamos.map((p, i) => {
@@ -433,7 +434,7 @@ export default function Cuentas() {
                         {cuotasPend !== null ? ` · ${cuotasPend} cuotas` : ''}
                       </Text>
                     </View>
-                    <Text style={[styles.prodAmount, { color:'#7C3AED' }]}>{fmt(Number(p.saldo_pendiente))}</Text>
+                    <Text style={[styles.prodAmount, { color:T.accent }]}>{fmt(Number(p.saldo_pendiente))}</Text>
                     <TouchableOpacity style={styles.editBtn} onPress={() => openEditPre(p)}>
                       <Text style={styles.editBtnText}>✎</Text>
                     </TouchableOpacity>
@@ -443,7 +444,7 @@ export default function Cuentas() {
               );
             })}
             <TouchableOpacity style={styles.sectionFooter} onPress={() => router.push(`/prestamos?moneda=${currency}`)}>
-              <Text style={{ color:'#7C3AED', fontWeight:'600', fontSize:13 }}>Registrar abono →</Text>
+              <Text style={{ color:T.accent, fontWeight:'600', fontSize:13 }}>Registrar abono →</Text>
             </TouchableOpacity>
           </SectionCard>
 
@@ -506,17 +507,17 @@ export default function Cuentas() {
               {(['banco','nombre'] as const).map(field => (
                 <View key={field}>
                   <Text style={styles.mLabel}>{field === 'banco' ? 'Banco *' : 'Nombre de tarjeta *'}</Text>
-                  <TextInput style={styles.mInput} placeholderTextColor="#9CA3AF"
+                  <TextInput style={styles.mInput} placeholderTextColor={T.textMicro}
                     placeholder={field === 'banco' ? 'Ej: BCP, BBVA, Scotiabank' : 'Ej: Visa Clásica'}
                     value={tarForm[field]} onChangeText={v => setTarForm(s => ({ ...s, [field]: v }))} />
                 </View>
               ))}
               <Text style={styles.mLabel}>Línea de Crédito</Text>
               <TextInput style={styles.mInput} keyboardType="decimal-pad" placeholder="5000.00"
-                placeholderTextColor="#9CA3AF" value={tarForm.linea} onChangeText={v => setTarForm(s => ({ ...s, linea: v }))} />
+                placeholderTextColor={T.textMicro} value={tarForm.linea} onChangeText={v => setTarForm(s => ({ ...s, linea: v }))} />
               <Text style={styles.mLabel}>Deuda Vigente</Text>
               <TextInput style={styles.mInput} keyboardType="decimal-pad" placeholder="0.00"
-                placeholderTextColor="#9CA3AF" value={tarForm.deuda} onChangeText={v => setTarForm(s => ({ ...s, deuda: v }))} />
+                placeholderTextColor={T.textMicro} value={tarForm.deuda} onChangeText={v => setTarForm(s => ({ ...s, deuda: v }))} />
               {(() => {
                 const l = parseFloat(tarForm.linea)||0, d = parseFloat(tarForm.deuda)||0;
                 return l > 0 ? (
@@ -526,12 +527,12 @@ export default function Cuentas() {
                   </View>
                 ) : null;
               })()}
-              <Text style={styles.mLabel}>Día de cierre de ciclo <Text style={{ fontWeight:'400', color:'#9CA3AF' }}>(opcional, 1–31)</Text></Text>
+              <Text style={styles.mLabel}>Día de cierre de ciclo <Text style={{ fontWeight:'400', color:T.textMicro }}>(opcional, 1–31)</Text></Text>
               <TextInput
                 style={styles.mInput}
                 keyboardType="number-pad"
                 placeholder="Ej: 7  (si tu tarjeta cierra el día 7)"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={T.textMicro}
                 maxLength={2}
                 value={tarForm.dia_cierre}
                 onChangeText={v => setTarForm(s => ({ ...s, dia_cierre: v.replace(/\D/g,'').slice(0,2) }))}
@@ -559,7 +560,7 @@ export default function Cuentas() {
               {!editPre && (
                 <>
                   <Text style={styles.mLabel}>Entidad / Persona *</Text>
-                  <TextInput style={styles.mInput} placeholderTextColor="#9CA3AF"
+                  <TextInput style={styles.mInput} placeholderTextColor={T.textMicro}
                     placeholder="Ej: Banco BCP, Juan García"
                     value={preForm.entidad} onChangeText={v => setPreForm(s => ({ ...s, entidad: v }))} />
                   <Text style={styles.mLabel}>Tipo</Text>
@@ -575,17 +576,17 @@ export default function Cuentas() {
                   </View>
                   <Text style={styles.mLabel}>Monto Total *</Text>
                   <TextInput style={styles.mInput} keyboardType="decimal-pad" placeholder="0.00"
-                    placeholderTextColor="#9CA3AF" value={preForm.monto_total} onChangeText={v => setPreForm(s => ({ ...s, monto_total: v }))} />
+                    placeholderTextColor={T.textMicro} value={preForm.monto_total} onChangeText={v => setPreForm(s => ({ ...s, monto_total: v }))} />
                 </>
               )}
               <Text style={styles.mLabel}>Saldo Pendiente {editPre ? '' : 'Inicial '}*</Text>
               <TextInput style={styles.mInput} keyboardType="decimal-pad" placeholder="0.00"
-                placeholderTextColor="#9CA3AF" value={preForm.saldo} onChangeText={v => setPreForm(s => ({ ...s, saldo: v }))} />
+                placeholderTextColor={T.textMicro} value={preForm.saldo} onChangeText={v => setPreForm(s => ({ ...s, saldo: v }))} />
               <Text style={styles.mLabel}>Cuota Mensual *</Text>
               <TextInput style={styles.mInput} keyboardType="decimal-pad" placeholder="0.00"
-                placeholderTextColor="#9CA3AF" value={preForm.mensual} onChangeText={v => setPreForm(s => ({ ...s, mensual: v }))} />
+                placeholderTextColor={T.textMicro} value={preForm.mensual} onChangeText={v => setPreForm(s => ({ ...s, mensual: v }))} />
               {!!preError && <Text style={styles.formError}>{preError}</Text>}
-              <TouchableOpacity style={[styles.formSaveBtn, { backgroundColor:'#7C3AED' }, preSaving && { opacity:0.6 }]} onPress={handleSavePre} disabled={preSaving}>
+              <TouchableOpacity style={[styles.formSaveBtn, { backgroundColor:T.accent }, preSaving && { opacity:0.6 }]} onPress={handleSavePre} disabled={preSaving}>
                 {preSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.formSaveText}>{editPre ? 'Guardar cambios' : 'Registrar Préstamo'}</Text>}
               </TouchableOpacity>
             </ScrollView>
@@ -605,12 +606,12 @@ export default function Cuentas() {
             </View>
             <View style={styles.formBody}>
               <Text style={styles.mLabel}>Nombre de la cuenta *</Text>
-              <TextInput style={styles.mInput} placeholderTextColor="#9CA3AF"
+              <TextInput style={styles.mInput} placeholderTextColor={T.textMicro}
                 placeholder="Ej: Fondo emergencia, Inversiones"
                 value={cueForm.nombre} onChangeText={v => setCueForm(s => ({ ...s, nombre: v }))} />
               <Text style={styles.mLabel}>Saldo {editCue ? 'actual' : 'inicial de apertura'} *</Text>
               <TextInput style={styles.mInput} keyboardType="decimal-pad" placeholder="0.00"
-                placeholderTextColor="#9CA3AF" value={cueForm.saldo} onChangeText={v => setCueForm(s => ({ ...s, saldo: v }))} />
+                placeholderTextColor={T.textMicro} value={cueForm.saldo} onChangeText={v => setCueForm(s => ({ ...s, saldo: v }))} />
               {!!cueError && <Text style={styles.formError}>{cueError}</Text>}
               <TouchableOpacity style={[styles.formSaveBtn, { backgroundColor:'#0891B2' }, cueSaving && { opacity:0.6 }]} onPress={handleSaveCue} disabled={cueSaving}>
                 {cueSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.formSaveText}>{editCue ? 'Guardar cambios' : 'Crear Cuenta'}</Text>}
@@ -626,88 +627,88 @@ export default function Cuentas() {
 const styles = StyleSheet.create({
   header:  { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
              paddingHorizontal:20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom:12,
-             borderBottomWidth:1, borderBottomColor:'#F3F4F6' },
-  title:   { fontSize:20, fontWeight:'800', color:'#111827' },
-  scroll:  { padding:16, paddingTop:12 },
-  empty:   { fontSize:13, color:'#9CA3AF', paddingVertical:8 },
-  divider: { height:1, backgroundColor:'#F3F4F6', marginVertical:12 },
-  rowSep:  { height:1, backgroundColor:'#F3F4F6' },
+             borderBottomWidth:1, borderBottomColor:T.border },
+  title:   { fontSize:20, fontWeight:'800', color:T.textPrimary },
+  scroll:  { padding:16, paddingTop:12, width:'100%', maxWidth:MAXW, alignSelf:'center' },
+  empty:   { fontSize:13, color:T.textMicro, paddingVertical:8 },
+  divider: { height:1, backgroundColor:T.border, marginVertical:12 },
+  rowSep:  { height:1, backgroundColor:T.border },
 
-  sectionCard:     { backgroundColor:'#fff', borderRadius:16, padding:16, marginBottom:16,
-                     borderLeftWidth:4, shadowColor:'#000', shadowOpacity:0.04, shadowRadius:6, elevation:1 },
+  sectionCard:     { backgroundColor:T.card, borderRadius:R.card, padding:16, marginBottom:16,
+                     borderWidth:1, borderColor:T.border, borderLeftWidth:4 },
   sectionCardHead: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:4 },
   sectionCardTitle:{ fontSize:14, fontWeight:'700' },
   sectionCardTotal:{ fontSize:16, fontWeight:'800' },
   sectionFooter:   { marginTop:12, alignSelf:'flex-start' },
 
   prodRow:   { flexDirection:'row', alignItems:'center', paddingVertical:10, gap:10 },
-  prodName:  { fontSize:14, fontWeight:'600', color:'#111827' },
-  prodAmount:{ fontSize:14, fontWeight:'700', color:'#374151', flexShrink:0 },
+  prodName:  { fontSize:14, fontWeight:'600', color:T.textPrimary },
+  prodAmount:{ fontSize:14, fontWeight:'700', color:T.textSec, flexShrink:0 },
 
   tarjetaCard: { flexDirection:'row', alignItems:'center', paddingVertical:10, gap:10 },
   bankBadge:   { width:40, height:28, borderRadius:6, justifyContent:'center', alignItems:'center', flexShrink:0 },
   bankBadgeText:{ color:'#fff', fontSize:10, fontWeight:'800', letterSpacing:0.3 },
-  barBg:       { height:4, backgroundColor:'#F3F4F6', borderRadius:2, overflow:'hidden', marginTop:6 },
+  barBg:       { height:4, backgroundColor:T.border, borderRadius:2, overflow:'hidden', marginTop:6 },
   barFill:     { height:'100%', borderRadius:2 },
-  miniLabel:   { fontSize:10, color:'#9CA3AF', marginTop:2 },
+  miniLabel:   { fontSize:10, color:T.textMicro, marginTop:2 },
 
-  editBtn:     { width:32, height:32, borderRadius:8, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', flexShrink:0 },
-  editBtnText: { fontSize:15, color:'#6B7280' },
+  editBtn:     { width:32, height:32, borderRadius:8, backgroundColor:T.screen, justifyContent:'center', alignItems:'center', flexShrink:0 },
+  editBtnText: { fontSize:15, color:T.textSec },
 
-  cicloBox:        { backgroundColor:'#FFF7F7', borderRadius:10, padding:10, marginBottom:8 },
-  cicloTitle:      { fontSize:10, fontWeight:'700', color:'#DC2626', textTransform:'uppercase', letterSpacing:0.5, marginBottom:8 },
+  cicloBox:        { backgroundColor:T.redSoft, borderRadius:10, padding:10, marginBottom:8 },
+  cicloTitle:      { fontSize:10, fontWeight:'700', color:T.red, textTransform:'uppercase', letterSpacing:0.5, marginBottom:8 },
   cicloRow:        { flexDirection:'row', alignItems:'flex-end', gap:6 },
   cicloField:      { flex:1 },
-  cicloFieldLabel: { fontSize:10, fontWeight:'600', color:'#6B7280', marginBottom:3 },
-  cicloInput:      { height:36, backgroundColor:'#fff', borderWidth:1, borderColor:'#FCA5A5', borderRadius:8, paddingHorizontal:8, fontSize:12, color:'#111827' },
-  cicloCalcBtn:    { height:36, backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, justifyContent:'center', alignItems:'center' },
+  cicloFieldLabel: { fontSize:10, fontWeight:'600', color:T.textSec, marginBottom:3 },
+  cicloInput:      { height:36, backgroundColor:T.card, borderWidth:1, borderColor:T.red, borderRadius:8, paddingHorizontal:8, fontSize:12, color:T.textPrimary },
+  cicloCalcBtn:    { height:36, backgroundColor:T.red, borderRadius:8, paddingHorizontal:10, justifyContent:'center', alignItems:'center' },
   cicloCalcText:   { fontSize:12, fontWeight:'700', color:'#fff' },
   cicloResult:     { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:10 },
-  cicloTotal:      { fontSize:18, fontWeight:'800', color:'#111827' },
-  cicloSub:        { fontSize:10, color:'#9CA3AF', marginTop:1 },
-  cicloBtn:        { backgroundColor:'#DC2626', borderRadius:8, paddingHorizontal:10, paddingVertical:7, alignItems:'center' },
+  cicloTotal:      { fontSize:18, fontWeight:'800', color:T.textPrimary },
+  cicloSub:        { fontSize:10, color:T.textMicro, marginTop:1 },
+  cicloBtn:        { backgroundColor:T.red, borderRadius:8, paddingHorizontal:10, paddingVertical:7, alignItems:'center' },
   cicloBtnText:    { fontSize:10, fontWeight:'700', color:'#fff', textAlign:'center' },
 
   fab:     { position:'absolute', bottom:24, right:20, width:56, height:56, borderRadius:28,
-             backgroundColor:'#3B82F6', justifyContent:'center', alignItems:'center',
-             shadowColor:'#3B82F6', shadowOffset:{ width:0, height:4 }, shadowOpacity:0.4, shadowRadius:8, elevation:8 },
+             backgroundColor:T.accent, justifyContent:'center', alignItems:'center',
+             shadowColor:T.accent, shadowOffset:{ width:0, height:4 }, shadowOpacity:0.4, shadowRadius:8, elevation:8 },
   fabText: { color:'#fff', fontSize:28, lineHeight:32, fontWeight:'300' },
 
   backdrop:       { flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'flex-end' },
-  sheet:          { backgroundColor:'#fff', borderTopLeftRadius:28, borderTopRightRadius:28,
+  sheet:          { backgroundColor:T.card, borderTopLeftRadius:28, borderTopRightRadius:28,
                     paddingBottom: Platform.OS === 'ios' ? 36 : 20 },
-  sheetPill:      { width:40, height:4, backgroundColor:'#E5E7EB', borderRadius:2, alignSelf:'center', marginTop:10, marginBottom:16 },
-  sheetTitle:     { fontSize:16, fontWeight:'700', color:'#111827', paddingHorizontal:20, marginBottom:12 },
-  sheetDiv:       { height:1, backgroundColor:'#F3F4F6' },
+  sheetPill:      { width:40, height:4, backgroundColor:T.inputBorder, borderRadius:2, alignSelf:'center', marginTop:10, marginBottom:16 },
+  sheetTitle:     { fontSize:16, fontWeight:'700', color:T.textPrimary, paddingHorizontal:20, marginBottom:12 },
+  sheetDiv:       { height:1, backgroundColor:T.border },
   sheetOpt:       { flexDirection:'row', alignItems:'center', paddingHorizontal:20, paddingVertical:14, gap:14 },
   sheetOptIcon:   { width:48, height:48, borderRadius:14, justifyContent:'center', alignItems:'center' },
-  sheetOptTitle:  { fontSize:15, fontWeight:'600', color:'#111827' },
-  sheetOptSub:    { fontSize:12, color:'#9CA3AF', marginTop:2 },
-  chevron:        { fontSize:22, color:'#D1D5DB' },
-  sheetSep:       { height:1, backgroundColor:'#F3F4F6', marginLeft:82 },
-  sheetCancel:    { margin:16, backgroundColor:'#F3F4F6', borderRadius:14, paddingVertical:14, alignItems:'center' },
-  sheetCancelText:{ fontSize:15, fontWeight:'600', color:'#374151' },
+  sheetOptTitle:  { fontSize:15, fontWeight:'600', color:T.textPrimary },
+  sheetOptSub:    { fontSize:12, color:T.textMicro, marginTop:2 },
+  chevron:        { fontSize:22, color:T.inputBorder },
+  sheetSep:       { height:1, backgroundColor:T.border, marginLeft:82 },
+  sheetCancel:    { margin:16, backgroundColor:T.screen, borderRadius:14, paddingVertical:14, alignItems:'center' },
+  sheetCancelText:{ fontSize:15, fontWeight:'600', color:T.textSec },
 
   formBackdrop: { flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'flex-end', alignItems:'center' },
-  formSheet:    { backgroundColor:'#fff', borderTopLeftRadius:24, borderTopRightRadius:24, width:'100%', maxWidth:600, maxHeight:'88%' },
+  formSheet:    { backgroundColor:T.card, borderTopLeftRadius:24, borderTopRightRadius:24, width:'100%', maxWidth:MAXW, maxHeight:'88%' },
   formHead:     { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
-                  paddingHorizontal:20, paddingVertical:16, borderBottomWidth:1, borderBottomColor:'#F3F4F6' },
-  formTitle:    { fontSize:16, fontWeight:'700', color:'#111827' },
-  formClose:    { fontSize:14, color:'#3B82F6', fontWeight:'500' },
+                  paddingHorizontal:20, paddingVertical:16, borderBottomWidth:1, borderBottomColor:T.border },
+  formTitle:    { fontSize:16, fontWeight:'700', color:T.textPrimary },
+  formClose:    { fontSize:14, color:T.accent, fontWeight:'500' },
   formBody:     { padding:20, paddingBottom:40 },
-  mLabel:       { fontSize:13, fontWeight:'500', color:'#374151', marginBottom:6, marginTop:14 },
-  mInput:       { height:50, backgroundColor:'#F9FAFB', borderWidth:1, borderColor:'#E5E7EB',
-                  borderRadius:12, paddingHorizontal:14, fontSize:15, color:'#111827' },
-  formError:    { color:'#DC2626', fontSize:13, marginTop:8, backgroundColor:'#FEF2F2', borderRadius:8, padding:10 },
-  formSaveBtn:  { height:50, backgroundColor:'#3B82F6', borderRadius:12, justifyContent:'center', alignItems:'center', marginTop:20 },
+  mLabel:       { fontSize:13, fontWeight:'500', color:T.textSec, marginBottom:6, marginTop:14 },
+  mInput:       { height:50, backgroundColor:T.input, borderWidth:1, borderColor:T.inputBorder,
+                  borderRadius:R.control, paddingHorizontal:14, fontSize:15, color:T.textPrimary },
+  formError:    { color:T.red, fontSize:13, marginTop:8, backgroundColor:T.redSoft, borderRadius:8, padding:10 },
+  formSaveBtn:  { height:50, backgroundColor:T.accent, borderRadius:R.control, justifyContent:'center', alignItems:'center', marginTop:20 },
   formSaveText: { color:'#fff', fontSize:15, fontWeight:'600' },
   previewRow:   { flexDirection:'row', justifyContent:'space-between', alignItems:'center',
-                  backgroundColor:'#F0FDF4', borderRadius:10, padding:12, marginTop:8 },
-  previewLabel: { fontSize:13, color:'#374151' },
-  previewVal:   { fontSize:13, fontWeight:'700', color:'#059669' },
-  toggle:       { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, marginBottom:4 },
+                  backgroundColor:T.greenSoft, borderRadius:10, padding:12, marginTop:8 },
+  previewLabel: { fontSize:13, color:T.textSec },
+  previewVal:   { fontSize:13, fontWeight:'700', color:T.green },
+  toggle:       { flexDirection:'row', backgroundColor:T.screen, borderRadius:10, padding:3, marginBottom:4 },
   toggleOpt:    { flex:1, paddingVertical:9, borderRadius:8, alignItems:'center' },
-  toggleActive: { backgroundColor:'#fff', shadowColor:'#000', shadowOpacity:0.06, shadowRadius:3, elevation:1 },
-  toggleText:   { fontSize:12, fontWeight:'500', color:'#6B7280' },
-  toggleActiveText:{ color:'#111827', fontWeight:'600' },
+  toggleActive: { backgroundColor:T.card, borderWidth:1, borderColor:T.border },
+  toggleText:   { fontSize:12, fontWeight:'500', color:T.textSec },
+  toggleActiveText:{ color:T.textPrimary, fontWeight:'600' },
 });

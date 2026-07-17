@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { T, R, MAXW } from '@/theme';
 
 interface Profile {
   id: string;
@@ -141,15 +142,15 @@ export default function Mas() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FB' }}>
-        <ActivityIndicator color="#3B82F6" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: T.screen }}>
+        <ActivityIndicator color={T.accent} />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
-      <SafeAreaView style={{ backgroundColor: '#F8F9FB' }}>
+    <View style={{ flex: 1, backgroundColor: T.screen }}>
+      <SafeAreaView style={{ backgroundColor: T.screen }}>
         <View style={s.header}>
           <Text style={s.title}>Configuración</Text>
         </View>
@@ -212,10 +213,10 @@ export default function Mas() {
               <Text style={s.rowSub}>{profile?.modulo_ahorros ? 'Activo — visible en Dashboard' : 'Inactivo'}</Text>
             </View>
             {savingAhorros
-              ? <ActivityIndicator size="small" color="#3B82F6" />
+              ? <ActivityIndicator size="small" color={T.accent} />
               : <Switch value={profile?.modulo_ahorros ?? false} onValueChange={handleToggleAhorros}
-                  trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
-                  thumbColor={profile?.modulo_ahorros ? '#3B82F6' : '#9CA3AF'} />}
+                  trackColor={{ false: T.inputBorder, true: T.accentSoft }}
+                  thumbColor={profile?.modulo_ahorros ? T.accent : T.textMicro} />}
           </View>
 
           <View style={s.sep} />
@@ -227,10 +228,10 @@ export default function Mas() {
               <Text style={s.rowSub}>{profile?.modulo_prestamos ? 'Activo — gestión de deudas' : 'Inactivo'}</Text>
             </View>
             {savingPrestamos
-              ? <ActivityIndicator size="small" color="#3B82F6" />
+              ? <ActivityIndicator size="small" color={T.accent} />
               : <Switch value={profile?.modulo_prestamos ?? false} onValueChange={handleTogglePrestamos}
-                  trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
-                  thumbColor={profile?.modulo_prestamos ? '#3B82F6' : '#9CA3AF'} />}
+                  trackColor={{ false: T.inputBorder, true: T.accentSoft }}
+                  thumbColor={profile?.modulo_prestamos ? T.accent : T.textMicro} />}
           </View>
 
           <View style={s.sep} />
@@ -242,10 +243,10 @@ export default function Mas() {
               <Text style={s.rowSub}>{profile?.modulo_tarjetas !== false ? 'Activo — pagos y saldos visibles' : 'Inactivo — módulo oculto'}</Text>
             </View>
             {savingTarjetas
-              ? <ActivityIndicator size="small" color="#3B82F6" />
+              ? <ActivityIndicator size="small" color={T.accent} />
               : <Switch value={profile?.modulo_tarjetas !== false} onValueChange={handleToggleTarjetas}
-                  trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
-                  thumbColor={profile?.modulo_tarjetas !== false ? '#3B82F6' : '#9CA3AF'} />}
+                  trackColor={{ false: T.inputBorder, true: T.accentSoft }}
+                  thumbColor={profile?.modulo_tarjetas !== false ? T.accent : T.textMicro} />}
           </View>
         </View>
 
@@ -282,7 +283,7 @@ export default function Mas() {
           <TouchableOpacity style={s.row} onPress={() => setShowLogoutConfirm(true)}>
             <Text style={s.rowIcon}>🚪</Text>
             <View style={s.rowBody}>
-              <Text style={[s.rowTitle, { color: '#DC2626' }]}>Cerrar sesión</Text>
+              <Text style={[s.rowTitle, { color: T.red }]}>Cerrar sesión</Text>
               <Text style={s.rowSub}>Salir de la cuenta</Text>
             </View>
           </TouchableOpacity>
@@ -310,7 +311,7 @@ export default function Mas() {
                       <Text style={s.monedaCode}>{m.code}</Text>
                       <Text style={s.monedaLbl}>{m.label}</Text>
                     </View>
-                    {profile?.moneda_base === m.code && <Text style={{ color: '#3B82F6', fontSize: 18 }}>✓</Text>}
+                    {profile?.moneda_base === m.code && <Text style={{ color: T.accent, fontSize: 18 }}>✓</Text>}
                   </TouchableOpacity>
                   {i < MONEDAS.length - 1 && <View style={s.sep} />}
                 </View>
@@ -333,7 +334,7 @@ export default function Mas() {
             <View style={s.formBody}>
               <Text style={s.mLabel}>Nombre</Text>
               <TextInput style={s.mInput} value={editName} onChangeText={setEditName}
-                autoFocus placeholderTextColor="#9CA3AF" />
+                autoFocus placeholderTextColor={T.textMicro} />
               <TouchableOpacity style={[s.saveBtn, savingName && { opacity: 0.6 }]} onPress={handleSaveName} disabled={savingName}>
                 {savingName ? <ActivityIndicator color="#fff" /> : <Text style={s.saveBtnText}>Guardar</Text>}
               </TouchableOpacity>
@@ -365,10 +366,10 @@ export default function Mas() {
                 <>
                   <Text style={s.mLabel}>Nueva contraseña</Text>
                   <TextInput style={s.mInput} value={newPass} onChangeText={setNewPass}
-                    secureTextEntry placeholder="Mínimo 6 caracteres" placeholderTextColor="#9CA3AF" />
+                    secureTextEntry placeholder="Mínimo 6 caracteres" placeholderTextColor={T.textMicro} />
                   <Text style={[s.mLabel, { marginTop: 12 }]}>Confirmar contraseña</Text>
                   <TextInput style={s.mInput} value={confirmPass} onChangeText={setConfirmPass}
-                    secureTextEntry placeholder="Repite la contraseña" placeholderTextColor="#9CA3AF" />
+                    secureTextEntry placeholder="Repite la contraseña" placeholderTextColor={T.textMicro} />
                   {!!passError && (
                     <View style={s.errBox}>
                       <Text style={s.errText}>{passError}</Text>
@@ -410,60 +411,60 @@ function SLabel({ children }: { children: string }) {
 }
 
 const s = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  title:  { fontSize: 20, fontWeight: '800', color: '#111827' },
-  scroll: { padding: 16 },
+  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: T.border },
+  title:  { fontSize: 20, fontWeight: '800', color: T.textPrimary },
+  scroll: { padding: 16, width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, marginTop: 16, marginLeft: 4 },
-  sectionHint:  { fontSize: 12, color: '#9CA3AF', marginBottom: 8, marginLeft: 4, lineHeight: 17 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: T.textMicro, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6, marginTop: 16, marginLeft: 4 },
+  sectionHint:  { fontSize: 12, color: T.textMicro, marginBottom: 8, marginLeft: 4, lineHeight: 17 },
 
-  group:      { backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  group:      { backgroundColor: T.card, borderRadius: R.card, overflow: 'hidden', borderWidth: 1, borderColor: T.border },
   row:        { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
   rowIcon:    { fontSize: 22, width: 28, textAlign: 'center' },
   rowBody:    { flex: 1, minWidth: 0 },
-  rowTitle:   { fontSize: 15, fontWeight: '600', color: '#111827' },
-  rowSub:     { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  rowChevron: { fontSize: 22, color: '#D1D5DB' },
-  sep:        { height: 1, backgroundColor: '#F3F4F6', marginLeft: 56 },
+  rowTitle:   { fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  rowSub:     { fontSize: 12, color: T.textMicro, marginTop: 1 },
+  rowChevron: { fontSize: 22, color: T.inputBorder },
+  sep:        { height: 1, backgroundColor: T.border, marginLeft: 56 },
 
-  profileCard:  { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  avatar:       { width: 52, height: 52, borderRadius: 26, backgroundColor: '#3B82F6', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  profileCard:  { backgroundColor: T.card, borderRadius: R.card, padding: 16, marginBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: T.border },
+  avatar:       { width: 52, height: 52, borderRadius: 26, backgroundColor: T.accent, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   avatarText:   { color: '#fff', fontSize: 22, fontWeight: '700' },
-  profileName:  { fontSize: 17, fontWeight: '700', color: '#111827' },
-  profileEmail: { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
-  editBtn:      { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#F3F4F6', borderRadius: 8 },
-  editBtnText:  { fontSize: 12, color: '#6B7280', fontWeight: '500' },
+  profileName:  { fontSize: 17, fontWeight: '700', color: T.textPrimary },
+  profileEmail: { fontSize: 13, color: T.textMicro, marginTop: 2 },
+  editBtn:      { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: T.screen, borderRadius: 8 },
+  editBtnText:  { fontSize: 12, color: T.textSec, fontWeight: '500' },
 
   modalBg:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end', alignItems: 'center' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, width: '100%', maxWidth: 600, maxHeight: '80%' },
-  modalHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  modalClose: { fontSize: 14, color: '#3B82F6', fontWeight: '500' },
+  modalSheet: { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, width: '100%', maxWidth: MAXW, maxHeight: '80%' },
+  modalHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: T.border },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: T.textPrimary },
+  modalClose: { fontSize: 14, color: T.accent, fontWeight: '500' },
   monedaOpt:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
   monedaFlag: { fontSize: 24 },
-  monedaCode: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  monedaLbl:  { fontSize: 12, color: '#9CA3AF' },
+  monedaCode: { fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  monedaLbl:  { fontSize: 12, color: T.textMicro },
 
   formBody:    { padding: 20, paddingBottom: 36 },
-  mLabel:      { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8 },
-  mInput:      { height: 50, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: '#111827', marginBottom: 4 },
-  saveBtn:     { height: 50, backgroundColor: '#3B82F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
+  mLabel:      { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 8 },
+  mInput:      { height: 50, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.control, paddingHorizontal: 14, fontSize: 15, color: T.textPrimary, marginBottom: 4 },
+  saveBtn:     { height: 50, backgroundColor: T.accent, borderRadius: R.control, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
-  errBox:  { backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10, marginTop: 10 },
-  errText: { color: '#DC2626', fontSize: 13 },
+  errBox:  { backgroundColor: T.redSoft, borderRadius: 8, padding: 10, marginTop: 10 },
+  errText: { color: T.red, fontSize: 13 },
 
   successBox:  { alignItems: 'center', paddingVertical: 20 },
   successIcon: { fontSize: 40, marginBottom: 12 },
-  successText: { fontSize: 15, color: '#374151', textAlign: 'center', marginBottom: 20, lineHeight: 22 },
+  successText: { fontSize: 15, color: T.textSec, textAlign: 'center', marginBottom: 20, lineHeight: 22 },
 
   confirmBg:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  confirmBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 340 },
-  confirmTitle:      { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 8 },
-  confirmSub:        { fontSize: 14, color: '#6B7280', lineHeight: 20, marginBottom: 20 },
+  confirmBox:        { backgroundColor: T.card, borderRadius: 20, padding: 24, width: '100%', maxWidth: 340 },
+  confirmTitle:      { fontSize: 17, fontWeight: '700', color: T.textPrimary, marginBottom: 8 },
+  confirmSub:        { fontSize: 14, color: T.textSec, lineHeight: 20, marginBottom: 20 },
   confirmBtns:       { flexDirection: 'row', gap: 10 },
-  confirmCancel:     { flex: 1, height: 46, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  confirmCancelText: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  confirmDanger:     { flex: 1, height: 46, backgroundColor: '#DC2626', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmCancel:     { flex: 1, height: 46, backgroundColor: T.screen, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
+  confirmCancelText: { fontSize: 15, color: T.textSec, fontWeight: '500' },
+  confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 15, color: '#fff', fontWeight: '600' },
 });

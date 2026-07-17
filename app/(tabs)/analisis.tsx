@@ -9,23 +9,12 @@ import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import SparklineChart from '@/components/SparklineChart';
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  screen:      '#F7F8FA',
-  hero:        '#080C10',
-  card:        '#FFFFFF',
-  border:      'rgba(0,0,0,0.06)',
-  textPrimary: '#0D1117',
-  textSec:     '#6B7280',
-  textMicro:   '#9CA3AF',
-  textHero:    '#FFFFFF',
-  textMuted:   'rgba(255,255,255,0.50)',
-  textLabel:   'rgba(255,255,255,0.30)',
-  accent:      '#3B82F6',
-  green:       '#00D084',
-  amber:       '#F59E0B',
-  red:         '#FF3B30',
-};
+import { T, MAXW } from '@/theme';
+
+// Colores del hero oscuro — no son tokens de la app, son del diseño del card hero
+const HERO_BG    = '#080C10';
+const HERO_GREEN = '#00D084';   // verde brillante sobre fondo oscuro
+const HERO_RED   = '#FF3B30';   // iOS red sobre fondo oscuro
 
 const SYM: Record<string, string> = {
   PEN: 'S/', USD: '$', EUR: '€', BRL: 'R$', COP: '$', MXN: '$', ARS: '$', CLP: '$',
@@ -294,9 +283,9 @@ export default function Analisis() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <View style={s.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.screen} />
+      <StatusBar barStyle="dark-content" backgroundColor={T.screen} />
 
-      <SafeAreaView style={{ backgroundColor: C.screen }}>
+      <SafeAreaView style={{ backgroundColor: T.screen }}>
         <View style={s.topBar}>
           <Text style={s.topTitle}>Análisis</Text>
           <View style={s.segmented}>
@@ -318,7 +307,7 @@ export default function Analisis() {
       </SafeAreaView>
 
       {loading ? (
-        <ActivityIndicator color={C.accent} style={{ marginTop: 60 }} />
+        <ActivityIndicator color={T.accent} style={{ marginTop: 60 }} />
       ) : !hasData ? (
         <View style={s.emptyState}>
           <Text style={{ fontSize: 40, marginBottom: 12 }}>📊</Text>
@@ -361,26 +350,26 @@ export default function Analisis() {
                   {/* Balance hero */}
                   <View style={s.heroCard}>
                     <Text style={s.heroLabel}>BALANCE — {fmtMes(mesSel).toUpperCase()}</Text>
-                    <Text style={[s.heroAmt, { color: bal >= 0 ? C.green : C.red }]}>
+                    <Text style={[s.heroAmt, { color: bal >= 0 ? HERO_GREEN : HERO_RED }]}>
                       {bal >= 0 ? '+' : ''}{fmt(bal)}
                     </Text>
                     <View style={s.heroDivider} />
                     <View style={s.heroRow}>
                       <View style={s.heroCol}>
                         <Text style={s.heroColLabel}>INGRESOS</Text>
-                        <Text style={[s.heroColAmt, { color: C.green }]}>{fmt(selSum.ingresos)}</Text>
+                        <Text style={[s.heroColAmt, { color: HERO_GREEN }]}>{fmt(selSum.ingresos)}</Text>
                       </View>
                       <View style={s.heroColDiv} />
                       <View style={s.heroCol}>
                         <Text style={s.heroColLabel}>GASTOS</Text>
-                        <Text style={[s.heroColAmt, { color: C.red }]}>{fmt(selSum.gastos)}</Text>
+                        <Text style={[s.heroColAmt, { color: HERO_RED }]}>{fmt(selSum.gastos)}</Text>
                       </View>
                       {selSum.ingresos > 0 && (
                         <>
                           <View style={s.heroColDiv} />
                           <View style={s.heroCol}>
                             <Text style={s.heroColLabel}>AHORRO</Text>
-                            <Text style={[s.heroColAmt, { color: savRate >= 0 ? C.green : C.red }]}>
+                            <Text style={[s.heroColAmt, { color: savRate >= 0 ? HERO_GREEN : HERO_RED }]}>
                               {savRate}%
                             </Text>
                           </View>
@@ -395,7 +384,7 @@ export default function Analisis() {
                       <Text style={s.bentoLabel}>GASTOS — TENDENCIA</Text>
                       <SparklineChart
                         values={summaries.map(sm => sm.gastos)}
-                        color={C.red}
+                        color={HERO_RED}
                         width={bentoSparkW}
                         height={40}
                       />
@@ -405,7 +394,7 @@ export default function Analisis() {
                       <Text style={s.bentoLabel}>INGRESOS — TENDENCIA</Text>
                       <SparklineChart
                         values={summaries.map(sm => sm.ingresos)}
-                        color={C.green}
+                        color={HERO_GREEN}
                         width={bentoSparkW}
                         height={40}
                       />
@@ -418,7 +407,7 @@ export default function Analisis() {
                     <Text style={s.cardTitle}>Comparativo mensual</Text>
                     {summaries.map((sum, i) => {
                       const bal2     = sum.ingresos - sum.gastos;
-                      const bColor   = bal2 >= 0 ? C.green : C.red;
+                      const bColor   = bal2 >= 0 ? HERO_GREEN : HERO_RED;
                       const isSel    = sum.mes === mesSel;
                       return (
                         <TouchableOpacity
@@ -427,7 +416,7 @@ export default function Analisis() {
                           onPress={() => setMesSel(sum.mes)}
                           activeOpacity={0.7}
                         >
-                          <Text style={[s.monthLabel, isSel && { color: C.accent, fontWeight: '700' }]}>
+                          <Text style={[s.monthLabel, isSel && { color: T.accent, fontWeight: '700' }]}>
                             {fmtMes(sum.mes)}
                           </Text>
                           <View style={s.barsCol}>
@@ -435,7 +424,7 @@ export default function Analisis() {
                               <View style={s.barBg}>
                                 <View style={[s.barFill, {
                                   width: `${Math.min((sum.ingresos / maxBar) * 100, 100)}%` as any,
-                                  backgroundColor: C.green + '88',
+                                  backgroundColor: HERO_GREEN + '88',
                                 }]} />
                               </View>
                               <Text style={s.barAmt}>{fmt(sum.ingresos)}</Text>
@@ -444,7 +433,7 @@ export default function Analisis() {
                               <View style={s.barBg}>
                                 <View style={[s.barFill, {
                                   width: `${Math.min((sum.gastos / maxBar) * 100, 100)}%` as any,
-                                  backgroundColor: C.red + '88',
+                                  backgroundColor: HERO_RED + '88',
                                 }]} />
                               </View>
                               <Text style={s.barAmt}>{fmt(sum.gastos)}</Text>
@@ -505,9 +494,9 @@ export default function Analisis() {
                     <Text style={s.heroAmt}>{fmt(catTotal)}</Text>
                     {catPrev > 0 && (
                       <View style={[s.deltaBadge, {
-                        backgroundColor: catDelta > 0 ? C.red + '22' : C.green + '22',
+                        backgroundColor: catDelta > 0 ? HERO_RED + '22' : HERO_GREEN + '22',
                       }]}>
-                        <Text style={[s.deltaBadgeText, { color: catDelta > 0 ? C.red : C.green }]}>
+                        <Text style={[s.deltaBadgeText, { color: catDelta > 0 ? HERO_RED : HERO_GREEN }]}>
                           {catDelta > 0 ? '▲' : '▼'} {Math.abs(catDelta)}%
                         </Text>
                       </View>
@@ -516,7 +505,7 @@ export default function Analisis() {
                   <View style={s.heroSparkRow}>
                     <SparklineChart
                       values={catSpark}
-                      color={catDelta > 5 ? C.red : catDelta < -5 ? C.green : C.accent}
+                      color={catDelta > 5 ? HERO_RED : catDelta < -5 ? HERO_GREEN : T.accent}
                       width={heroSparkW}
                       height={48}
                       strokeWidth={2}
@@ -534,7 +523,7 @@ export default function Analisis() {
                   <View style={s.card}>
                     <Text style={s.cardTitle}>Subcategorías</Text>
                     {subcatsLoading ? (
-                      <ActivityIndicator color={C.accent} style={{ marginVertical: 16 }} />
+                      <ActivityIndicator color={T.accent} style={{ marginVertical: 16 }} />
                     ) : subcats.length === 0 ? (
                       <Text style={s.emptyMini}>Sin subcategorías registradas este mes.</Text>
                     ) : (
@@ -549,7 +538,7 @@ export default function Analisis() {
                             <View style={s.microBarBg}>
                               <View style={[s.microBarFill, {
                                 width: `${share}%` as any,
-                                backgroundColor: C.accent,
+                                backgroundColor: T.accent,
                               }]} />
                             </View>
                             <Text style={s.subcatShare}>{Math.round(share)}% del total</Text>
@@ -579,10 +568,10 @@ export default function Analisis() {
                           <Text style={s.distIcon}>{CAT_ICONS[cat] ?? '📦'}</Text>
                           <View style={s.distBody}>
                             <View style={s.distTitleRow}>
-                              <Text style={[s.distCat, isFocus && { color: C.accent }]}>{cat}</Text>
+                              <Text style={[s.distCat, isFocus && { color: T.accent }]}>{cat}</Text>
                               <View style={s.distRight}>
                                 {prevAmt > 0 && (
-                                  <Text style={[s.distDelta, { color: delta > 0 ? C.red : C.green }]}>
+                                  <Text style={[s.distDelta, { color: delta > 0 ? HERO_RED : HERO_GREEN }]}>
                                     {delta > 0 ? '▲' : '▼'}{Math.abs(delta)}%
                                   </Text>
                                 )}
@@ -592,7 +581,7 @@ export default function Analisis() {
                             <View style={s.microBarBg}>
                               <View style={[s.microBarFill, {
                                 width: `${share}%` as any,
-                                backgroundColor: isFocus ? C.accent : C.textMicro + '55',
+                                backgroundColor: isFocus ? T.accent : T.textMicro + '55',
                               }]} />
                             </View>
                           </View>
@@ -625,13 +614,13 @@ export default function Analisis() {
                   </View>
                   <View style={[s.bentoCard, { flex: 1, marginLeft: 8 }]}>
                     <Text style={s.bentoLabel}>CON ALZA</Text>
-                    <Text style={[s.bentoStatNum, { color: alertas.length > 0 ? C.red : C.textPrimary }]}>
+                    <Text style={[s.bentoStatNum, { color: alertas.length > 0 ? HERO_RED : T.textPrimary }]}>
                       {alertas.length}
                     </Text>
                   </View>
                   <View style={[s.bentoCard, { flex: 1, marginLeft: 8 }]}>
                     <Text style={s.bentoLabel}>A LA BAJA</Text>
-                    <Text style={[s.bentoStatNum, { color: C.green }]}>
+                    <Text style={[s.bentoStatNum, { color: HERO_GREEN }]}>
                       {productos.filter(p => p.pctChange < 0).length}
                     </Text>
                   </View>
@@ -650,7 +639,7 @@ export default function Analisis() {
                     <Text style={s.cardTitle}>Evolución de precios</Text>
                     {productos.map((prod, i) => {
                       const isExp    = selProd === prod.producto;
-                      const lineClr  = prod.alerta ? C.red : prod.pctChange < 0 ? C.green : C.accent;
+                      const lineClr  = prod.alerta ? HERO_RED : prod.pctChange < 0 ? HERO_GREEN : T.accent;
                       return (
                         <View key={prod.producto}>
                           <TouchableOpacity
@@ -667,8 +656,8 @@ export default function Analisis() {
                                   </View>
                                 )}
                                 {!prod.alerta && prod.pctChange < 0 && (
-                                  <View style={[s.alertPill, { backgroundColor: C.green + '22' }]}>
-                                    <Text style={[s.alertPillText, { color: C.green }]}>
+                                  <View style={[s.alertPill, { backgroundColor: HERO_GREEN + '22' }]}>
+                                    <Text style={[s.alertPillText, { color: HERO_GREEN }]}>
                                       ▼ {Math.abs(prod.pctChange)}%
                                     </Text>
                                   </View>
@@ -730,7 +719,7 @@ export default function Analisis() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.screen },
+  screen: { flex: 1, backgroundColor: T.screen },
   scroll: { padding: 16, paddingBottom: 120 },
 
   // Top bar
@@ -739,61 +728,61 @@ const s = StyleSheet.create({
     paddingTop:   Platform.OS === 'android' ? 44 : 14,
     paddingBottom: 12,
   },
-  topTitle:  { fontSize: 22, fontWeight: '800', color: C.textPrimary, letterSpacing: -0.3, marginBottom: 12 },
+  topTitle:  { fontSize: 22, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.3, marginBottom: 12 },
 
   // Segmented control
   segmented: { flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 12, padding: 3 },
   segBtn:    { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, flexDirection: 'row', justifyContent: 'center', gap: 4 },
-  segBtnOn:  { backgroundColor: C.card, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 4, elevation: 2 },
-  segText:   { fontSize: 12, fontWeight: '500', color: C.textSec },
-  segTextOn: { color: C.textPrimary, fontWeight: '700' },
-  alertDot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: C.red },
+  segBtnOn:  { backgroundColor: T.card, borderWidth: 1, borderColor: T.border },
+  segText:   { fontSize: 12, fontWeight: '500', color: T.textSec },
+  segTextOn: { color: T.textPrimary, fontWeight: '700' },
+  alertDot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: HERO_RED },
 
   // Pills
   pillRow:    { flexDirection: 'row', paddingHorizontal: 0, paddingBottom: 12, paddingTop: 4, gap: 6 },
-  pill:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
-  pillOn:     { backgroundColor: C.textPrimary, borderColor: C.textPrimary },
-  pillText:   { fontSize: 12, fontWeight: '500', color: C.textSec },
+  pill:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: T.card, borderWidth: 1, borderColor: T.border },
+  pillOn:     { backgroundColor: T.textPrimary, borderColor: T.textPrimary },
+  pillText:   { fontSize: 12, fontWeight: '500', color: T.textSec },
   pillTextOn: { color: '#fff', fontWeight: '600' },
 
   // Hero card
-  heroCard:    { backgroundColor: C.hero, borderRadius: 22, padding: 22, marginBottom: 10 },
-  heroLabel:   { fontSize: 9, fontWeight: '600', color: C.textLabel, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 10 },
-  heroAmt:     { fontSize: 40, fontWeight: '800', color: C.textHero, letterSpacing: -1.5 },
+  heroCard:    { backgroundColor: HERO_BG, borderRadius: 22, padding: 22, marginBottom: 10 },
+  heroLabel:   { fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.30)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 10 },
+  heroAmt:     { fontSize: 40, fontWeight: '800', color: '#fff', letterSpacing: -1.5 },
   heroAmtRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
   heroSparkRow:{ marginTop: 14 },
-  heroMeta:    { fontSize: 11, color: C.textMuted, marginTop: 10 },
+  heroMeta:    { fontSize: 11, color: 'rgba(255,255,255,0.50)', marginTop: 10 },
   heroDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 14 },
   heroRow:     { flexDirection: 'row' },
   heroCol:     { flex: 1 },
   heroColDiv:  { width: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 10 },
-  heroColLabel:{ fontSize: 9, fontWeight: '600', color: C.textLabel, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
-  heroColAmt:  { fontSize: 16, fontWeight: '700', color: C.textHero },
+  heroColLabel:{ fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.30)', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 4 },
+  heroColAmt:  { fontSize: 16, fontWeight: '700', color: '#fff' },
 
   deltaBadge:     { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   deltaBadgeText: { fontSize: 12, fontWeight: '700' },
 
   // Bento row
   bentoRow:    { flexDirection: 'row', marginBottom: 10 },
-  bentoCard:   { backgroundColor: C.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: C.border },
-  bentoLabel:  { fontSize: 9, fontWeight: '600', color: C.textMicro, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 },
-  bentoSub:    { fontSize: 10, color: C.textMicro, marginTop: 4 },
-  bentoStatNum:{ fontSize: 26, fontWeight: '800', color: C.textPrimary, letterSpacing: -0.5, marginTop: 4 },
+  bentoCard:   { backgroundColor: T.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: T.border },
+  bentoLabel:  { fontSize: 9, fontWeight: '600', color: T.textMicro, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 },
+  bentoSub:    { fontSize: 10, color: T.textMicro, marginTop: 4 },
+  bentoStatNum:{ fontSize: 26, fontWeight: '800', color: T.textPrimary, letterSpacing: -0.5, marginTop: 4 },
 
   // Card
-  card:      { backgroundColor: C.card, borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: C.border },
-  cardTitle: { fontSize: 13, fontWeight: '700', color: C.textPrimary, marginBottom: 14 },
+  card:      { backgroundColor: T.card, borderRadius: 18, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: T.border },
+  cardTitle: { fontSize: 13, fontWeight: '700', color: T.textPrimary, marginBottom: 14 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.04)' },
 
   // Monthly comparison
   monthRow:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 8 },
-  monthRowSel: { backgroundColor: C.accent + '08', marginHorizontal: -4, paddingHorizontal: 4, borderRadius: 8 },
-  monthLabel:  { fontSize: 11, fontWeight: '500', color: C.textSec, width: 44 },
+  monthRowSel: { backgroundColor: T.accent + '08', marginHorizontal: -4, paddingHorizontal: 4, borderRadius: 8 },
+  monthLabel:  { fontSize: 11, fontWeight: '500', color: T.textSec, width: 44 },
   barsCol:     { flex: 1, gap: 3 },
   barRow:      { flexDirection: 'row', alignItems: 'center', gap: 6 },
   barBg:       { flex: 1, height: 5, backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 3, overflow: 'hidden' },
   barFill:     { height: '100%' as any, borderRadius: 3 },
-  barAmt:      { fontSize: 10, color: C.textMicro, width: 58, textAlign: 'right' },
+  barAmt:      { fontSize: 10, color: T.textMicro, width: 58, textAlign: 'right' },
   balBadge:    { fontSize: 11, fontWeight: '700', width: 68, textAlign: 'right' },
 
   // Distribution
@@ -801,10 +790,10 @@ const s = StyleSheet.create({
   distIcon:     { fontSize: 18, width: 26, textAlign: 'center' },
   distBody:     { flex: 1 },
   distTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  distCat:      { fontSize: 13, fontWeight: '600', color: C.textPrimary },
+  distCat:      { fontSize: 13, fontWeight: '600', color: T.textPrimary },
   distRight:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
   distDelta:    { fontSize: 11, fontWeight: '600' },
-  distAmt:      { fontSize: 13, fontWeight: '700', color: C.textPrimary },
+  distAmt:      { fontSize: 13, fontWeight: '700', color: T.textPrimary },
 
   // Micro progress bar
   microBarBg:   { height: 3, backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 2, overflow: 'hidden', marginTop: 2 },
@@ -813,35 +802,35 @@ const s = StyleSheet.create({
   // Subcategories
   subcatRow:      { paddingVertical: 10 },
   subcatTitleRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
-  subcatName:     { fontSize: 13, fontWeight: '600', color: C.textPrimary },
-  subcatAmt:      { fontSize: 13, fontWeight: '700', color: C.textPrimary },
-  subcatShare:    { fontSize: 10, color: C.textMicro, marginTop: 4 },
+  subcatName:     { fontSize: 13, fontWeight: '600', color: T.textPrimary },
+  subcatAmt:      { fontSize: 13, fontWeight: '700', color: T.textPrimary },
+  subcatShare:    { fontSize: 10, color: T.textMicro, marginTop: 4 },
 
   // Alert banner
-  alertBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.red + '12', borderRadius: 12, padding: 12, marginBottom: 10 },
+  alertBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: HERO_RED + '12', borderRadius: 12, padding: 12, marginBottom: 10 },
   alertBannerIcon: { fontSize: 16 },
-  alertBannerText: { flex: 1, fontSize: 13, color: C.red, fontWeight: '500' },
+  alertBannerText: { flex: 1, fontSize: 13, color: HERO_RED, fontWeight: '500' },
 
   // Products
   prodRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
   prodLeft:    { flex: 1, minWidth: 0 },
   prodNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  prodName:    { fontSize: 14, fontWeight: '600', color: C.textPrimary, flexShrink: 1 },
-  prodMeta:    { fontSize: 11, color: C.textMicro },
+  prodName:    { fontSize: 14, fontWeight: '600', color: T.textPrimary, flexShrink: 1 },
+  prodMeta:    { fontSize: 11, color: T.textMicro },
   prodRight:   { alignItems: 'flex-end', gap: 2 },
-  expandHint:  { fontSize: 10, color: C.textMicro },
+  expandHint:  { fontSize: 10, color: T.textMicro },
 
-  alertPill:     { backgroundColor: C.red + '15', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  alertPillText: { fontSize: 11, fontWeight: '700', color: C.red },
+  alertPill:     { backgroundColor: HERO_RED + '15', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  alertPillText: { fontSize: 11, fontWeight: '700', color: HERO_RED },
 
   expandedBox:  { paddingBottom: 12, paddingTop: 4 },
   historyRow:   { flexDirection: 'row', gap: 12, marginTop: 10, paddingBottom: 4 },
   historyCell:  { alignItems: 'center', minWidth: 52 },
-  historyMes:   { fontSize: 10, color: C.textMicro, marginBottom: 2 },
-  historyPrice: { fontSize: 12, fontWeight: '600', color: C.textPrimary },
+  historyMes:   { fontSize: 10, color: T.textMicro, marginBottom: 2 },
+  historyPrice: { fontSize: 12, fontWeight: '600', color: T.textPrimary },
 
   // Empty states
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText:  { fontSize: 14, color: C.textSec, textAlign: 'center', lineHeight: 22 },
-  emptyMini:  { fontSize: 13, color: C.textMicro, textAlign: 'center', paddingVertical: 20 },
+  emptyText:  { fontSize: 14, color: T.textSec, textAlign: 'center', lineHeight: 22 },
+  emptyMini:  { fontSize: 13, color: T.textMicro, textAlign: 'center', paddingVertical: 20 },
 });

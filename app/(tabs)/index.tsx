@@ -22,25 +22,14 @@ interface Transaccion {
 }
 interface Presupuesto { categoria: string; monto_limite: number }
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
+import { T, MAXW } from '@/theme';
 
-const C = {
-  screen:     '#F7F8FA',
-  hero:       '#080C10',
-  heroSurf:   '#111620',
-  card:       '#FFFFFF',
-  border:     'rgba(0,0,0,0.06)',
-  textPrimary:'#0D1117',
-  textSec:    '#6B7280',
-  textMicro:  '#9CA3AF',
-  textHero:   '#FFFFFF',
-  textMuted:  'rgba(255,255,255,0.45)',
-  textLabel:  'rgba(255,255,255,0.30)',
-  accent:     '#7C3AED',
-  green:      '#00D084',
-  amber:      '#F59E0B',
-  red:        '#FF3B30',
-};
+// Colores del hero oscuro — no son tokens de la app, son del diseño del card hero
+const HERO_BG    = '#080C10';
+const HERO_SURF  = '#111620';
+const HERO_GREEN = '#00D084';   // verde brillante sobre fondo oscuro
+const HERO_RED   = '#FF3B30';   // iOS red sobre fondo oscuro
+const HERO_AMBER = '#F59E0B';   // amber sobre fondo oscuro
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -183,27 +172,27 @@ export default function Dashboard() {
   // proyectado = variables proyectados + fijos ya pagados (no se repiten) + únicos + pendientes
   const proyectado          = runRate + expensesFijos + expensesUnicos + totalPendingCommits;
   const presProgress = totalPres > 0 ? Math.min(expenses / totalPres, 1) : 0;
-  const proyColor    = totalPres > 0 && proyectado > totalPres      ? C.red
-                     : totalPres > 0 && proyectado > totalPres * 0.85 ? C.amber
-                     : C.green;
+  const proyColor    = totalPres > 0 && proyectado > totalPres      ? HERO_RED
+                     : totalPres > 0 && proyectado > totalPres * 0.85 ? HERO_AMBER
+                     : HERO_GREEN;
 
   // Status
-  let statusColor = C.accent;
+  let statusColor: string = T.accent;
   let statusTitle = 'Sin presupuesto definido';
   let statusSub   = `Llevas ${fmt(expenses, currency)} gastados este mes`;
 
   if (totalPres > 0) {
     const pct = proyectado / totalPres;
     if (pct < 0.85) {
-      statusColor = C.green;
+      statusColor = HERO_GREEN;
       statusTitle = '¡Vas por buen camino!';
       statusSub   = `Día ${daysElapsed} de ${daysInMonth} · ${Math.round(presProgress * 100)}% del presupuesto`;
     } else if (pct < 1.0) {
-      statusColor = C.amber;
+      statusColor = HERO_AMBER;
       statusTitle = 'Cuidado con el ritmo';
       statusSub   = `Día ${daysElapsed} de ${daysInMonth} · ${Math.round(presProgress * 100)}% del presupuesto`;
     } else {
-      statusColor = C.red;
+      statusColor = HERO_RED;
       statusTitle = 'Alerta de sobregasto';
       statusSub   = `Día ${daysElapsed} de ${daysInMonth} · ${Math.round(presProgress * 100)}% del presupuesto`;
     }
@@ -222,7 +211,7 @@ export default function Dashboard() {
 
   return (
     <View style={s.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.screen} />
+      <StatusBar barStyle="dark-content" backgroundColor={T.screen} />
 
       <ScrollView
         contentContainerStyle={s.scroll}
@@ -230,7 +219,7 @@ export default function Dashboard() {
         scrollEventThrottle={16}
       >
         {/* ── Top bar ── */}
-        <SafeAreaView style={{ backgroundColor: C.screen }}>
+        <SafeAreaView style={{ backgroundColor: T.screen }}>
           <View style={s.topBar}>
             <View>
               <Text style={s.greeting}>
@@ -257,10 +246,10 @@ export default function Dashboard() {
             <Text style={s.heroRunLabel}>{heroLabel}</Text>
 
             {loading ? (
-              <ActivityIndicator color={C.textMuted} style={{ marginVertical: 18 }} />
+              <ActivityIndicator color={'rgba(255,255,255,0.45)'} style={{ marginVertical: 18 }} />
             ) : (
               <Text
-                style={[s.heroRunAmt, { color: totalPres > 0 ? C.textHero : (balance >= 0 ? C.green : C.red) }]}
+                style={[s.heroRunAmt, { color: totalPres > 0 ? '#fff' : (balance >= 0 ? HERO_GREEN : HERO_RED) }]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.7}
@@ -316,7 +305,7 @@ export default function Dashboard() {
               <Text style={s.proyToggle}>{showProyectadoInfo ? '▲ Ocultar' : '▼ Ver cálculo'}</Text>
             </View>
             <Text
-              style={[s.proyAmt, { color: loading ? C.textPrimary : proyColor }]}
+              style={[s.proyAmt, { color: loading ? T.textPrimary : proyColor }]}
               numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}
             >
               {loading ? '—' : fmt(proyectado, currency)}
@@ -360,7 +349,7 @@ export default function Dashboard() {
                 )}
                 <View style={s.proyDetailSep} />
                 <View style={s.proyDetailRow}>
-                  <Text style={[s.proyDetailLabel, { fontWeight: '700', color: C.textPrimary }]}>= Proyectado total</Text>
+                  <Text style={[s.proyDetailLabel, { fontWeight: '700', color: T.textPrimary }]}>= Proyectado total</Text>
                   <Text style={[s.proyDetailVal, { fontWeight: '700', color: proyColor }]}>{fmt(proyectado, currency)}</Text>
                 </View>
                 {totalPres > 0 && (
@@ -385,23 +374,23 @@ export default function Dashboard() {
           <View style={s.balanceCard}>
             <Text style={s.balanceTopLabel}>BALANCE DISPONIBLE</Text>
             {loading ? (
-              <ActivityIndicator color={C.textSec} style={{ marginVertical: 8 }} />
+              <ActivityIndicator color={T.textSec} style={{ marginVertical: 8 }} />
             ) : (
-              <Text style={[s.balanceAmt, { color: balance >= 0 ? C.green : C.red }]}>
+              <Text style={[s.balanceAmt, { color: balance >= 0 ? HERO_GREEN : HERO_RED }]}>
                 {fmt(balance, currency)}
               </Text>
             )}
             <View style={s.balanceInOut}>
               <View style={s.balanceCol}>
                 <Text style={s.balanceColLabel}>↑ Ingresos</Text>
-                <Text style={[s.balanceColAmt, { color: C.green }]}>
+                <Text style={[s.balanceColAmt, { color: HERO_GREEN }]}>
                   {loading ? '—' : fmt(income, currency)}
                 </Text>
               </View>
               <View style={s.balanceSep} />
               <View style={s.balanceCol}>
                 <Text style={s.balanceColLabel}>↓ Gastos</Text>
-                <Text style={[s.balanceColAmt, { color: C.red }]}>
+                <Text style={[s.balanceColAmt, { color: HERO_RED }]}>
                   {loading ? '—' : fmt(expenses, currency)}
                 </Text>
               </View>
@@ -428,8 +417,8 @@ export default function Dashboard() {
                   const limit = pres?.monto_limite ?? 0;
                   const pct   = limit > 0 ? Math.min(gasto / limit, 1) : 0;
                   const barColor = limit > 0
-                    ? (pct >= 0.9 ? C.red : pct >= 0.7 ? C.amber : C.green)
-                    : C.textMicro;
+                    ? (pct >= 0.9 ? HERO_RED : pct >= 0.7 ? HERO_AMBER : HERO_GREEN)
+                    : T.textMicro;
                   return (
                     <View key={cat}>
                       <TouchableOpacity
@@ -474,7 +463,7 @@ export default function Dashboard() {
             </View>
 
             {loading ? (
-              <ActivityIndicator color={C.textMicro} style={{ marginVertical: 20 }} />
+              <ActivityIndicator color={T.textMicro} style={{ marginVertical: 20 }} />
             ) : recent.length === 0 ? (
               <View style={s.emptyTx}>
                 <Text style={s.emptyTxIcon}>💸</Text>
@@ -497,7 +486,7 @@ export default function Dashboard() {
                           {tx.categoria} · {new Date(tx.creado_en).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}
                         </Text>
                       </View>
-                      <Text style={[s.txAmt, { color: tx.tipo === 'ingreso' ? C.green : C.red }]}>
+                      <Text style={[s.txAmt, { color: tx.tipo === 'ingreso' ? HERO_GREEN : HERO_RED }]}>
                         {tx.tipo === 'ingreso' ? '+' : '−'}{fmt(Number(tx.monto), currency)}
                       </Text>
                     </View>
@@ -581,7 +570,7 @@ export default function Dashboard() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.screen },
+  screen: { flex: 1, backgroundColor: T.screen },
   scroll: { flexGrow: 1 },
   container: { paddingHorizontal: 16, paddingTop: 6 },
 
@@ -590,27 +579,27 @@ const s = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 44 : 14, paddingBottom: 12,
   },
-  greeting:   { fontSize: 18, fontWeight: '700', color: C.textPrimary, letterSpacing: -0.2 },
-  subGreeting:{ fontSize: 12, color: C.textMicro, marginTop: 2, textTransform: 'capitalize', letterSpacing: 0.2 },
+  greeting:   { fontSize: 18, fontWeight: '700', color: T.textPrimary, letterSpacing: -0.2 },
+  subGreeting:{ fontSize: 12, color: T.textMicro, marginTop: 2, textTransform: 'capitalize', letterSpacing: 0.2 },
   avatar:     {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: C.hero, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: HERO_BG, justifyContent: 'center', alignItems: 'center',
   },
   avatarText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // ── ZONA 1: Hero
   hero: {
-    backgroundColor: C.hero,
+    backgroundColor: HERO_BG,
     borderRadius: 24,
     padding: 24,
     marginBottom: 10,
   },
   heroRunLabel: {
-    fontSize: 10, fontWeight: '600', color: C.textLabel,
+    fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.30)',
     textTransform: 'uppercase', letterSpacing: 2.5, marginBottom: 10,
   },
   heroRunAmt: {
-    fontSize: 52, fontWeight: '800', color: C.textHero,
+    fontSize: 52, fontWeight: '800', color: '#fff',
     letterSpacing: -2, marginBottom: 20,
   },
   heroDivider: {
@@ -618,8 +607,8 @@ const s = StyleSheet.create({
   },
   heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   heroDot:       { width: 8, height: 8, borderRadius: 4 },
-  heroStatusText:{ fontSize: 17, fontWeight: '700', color: C.textHero, letterSpacing: -0.2 },
-  heroStatusSub: { fontSize: 12, color: C.textMuted, marginBottom: 14, letterSpacing: 0.1 },
+  heroStatusText:{ fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: -0.2 },
+  heroStatusSub: { fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 14, letterSpacing: 0.1 },
   heroBarBg:     {
     height: 2, backgroundColor: 'rgba(255,255,255,0.10)',
     borderRadius: 1, overflow: 'hidden',
@@ -629,98 +618,98 @@ const s = StyleSheet.create({
   // ── ZONA 2: Bento
   bentoRow:  { flexDirection: 'row', marginBottom: 10 },
   bentoCard: {
-    flex: 1, backgroundColor: C.card, borderRadius: 18,
-    padding: 16, borderWidth: 1, borderColor: C.border,
+    flex: 1, backgroundColor: T.card, borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: T.border,
   },
   bentoLabel: {
-    fontSize: 9, fontWeight: '600', color: C.textMicro,
+    fontSize: 9, fontWeight: '600', color: T.textMicro,
     textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8,
   },
   bentoAmt: {
-    fontSize: 18, fontWeight: '700', color: C.textPrimary,
+    fontSize: 18, fontWeight: '700', color: T.textPrimary,
     letterSpacing: -0.4, marginBottom: 4,
   },
-  bentoSub: { fontSize: 10, color: C.textMicro },
+  bentoSub: { fontSize: 10, color: T.textMicro },
 
   // ── Proyectado card (standalone — sin heredar flex:1 de bentoCard)
   proyStandalone: {
-    backgroundColor: C.card, borderRadius: 18,
-    padding: 16, borderWidth: 1, borderColor: C.border,
+    backgroundColor: T.card, borderRadius: 18,
+    padding: 16, borderWidth: 1, borderColor: T.border,
     marginBottom: 10,
   },
   proyHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  proyToggle:     { fontSize: 11, color: C.accent, fontWeight: '500' },
+  proyToggle:     { fontSize: 11, color: T.accent, fontWeight: '500' },
   proyAmt:        { fontSize: 26, fontWeight: '800', letterSpacing: -0.6 },
-  proyDetail:     { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
+  proyDetail:     { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: T.border },
   proyDetailRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 },
-  proyDetailLabel:{ fontSize: 12, color: C.textSec },
-  proyDetailVal:  { fontSize: 12, color: C.textPrimary, fontWeight: '600' },
-  proyDetailSep:  { height: 1, backgroundColor: C.border, marginVertical: 8 },
-  proyDetailNote: { fontSize: 11, color: C.textMicro, marginTop: 4 },
+  proyDetailLabel:{ fontSize: 12, color: T.textSec },
+  proyDetailVal:  { fontSize: 12, color: T.textPrimary, fontWeight: '600' },
+  proyDetailSep:  { height: 1, backgroundColor: T.border, marginVertical: 8 },
+  proyDetailNote: { fontSize: 11, color: T.textMicro, marginTop: 4 },
 
   // ── Balance card
   balanceCard: {
-    backgroundColor: C.card, borderRadius: 18, padding: 20,
-    marginBottom: 10, borderWidth: 1, borderColor: C.border,
+    backgroundColor: T.card, borderRadius: 18, padding: 20,
+    marginBottom: 10, borderWidth: 1, borderColor: T.border,
   },
   balanceTopLabel: {
-    fontSize: 9, fontWeight: '600', color: C.textMicro,
+    fontSize: 9, fontWeight: '600', color: T.textMicro,
     textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8,
   },
   balanceAmt:     { fontSize: 30, fontWeight: '800', letterSpacing: -0.8, marginBottom: 16 },
   balanceInOut:   { flexDirection: 'row' },
   balanceCol:     { flex: 1 },
-  balanceSep:     { width: 1, backgroundColor: C.border, marginHorizontal: 16 },
-  balanceColLabel:{ fontSize: 11, color: C.textMicro, marginBottom: 4 },
+  balanceSep:     { width: 1, backgroundColor: T.border, marginHorizontal: 16 },
+  balanceColLabel:{ fontSize: 11, color: T.textMicro, marginBottom: 4 },
   balanceColAmt:  { fontSize: 15, fontWeight: '700', letterSpacing: -0.2 },
 
   // ── Sections
   section:     { marginBottom: 10 },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sectionTitle:{ fontSize: 14, fontWeight: '700', color: C.textPrimary, letterSpacing: -0.1 },
-  sectionLink: { fontSize: 12, color: C.accent, fontWeight: '500' },
+  sectionTitle:{ fontSize: 14, fontWeight: '700', color: T.textPrimary, letterSpacing: -0.1 },
+  sectionLink: { fontSize: 12, color: T.accent, fontWeight: '500' },
 
   // ── Category card
   catCard:    {
-    backgroundColor: C.card, borderRadius: 18, overflow: 'hidden',
-    borderWidth: 1, borderColor: C.border,
+    backgroundColor: T.card, borderRadius: 18, overflow: 'hidden',
+    borderWidth: 1, borderColor: T.border,
   },
   catRow:     { paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center' },
   catIcon:    { fontSize: 15, marginRight: 12, width: 22, textAlign: 'center' },
   catBody:    { flex: 1 },
   catTop:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  catName:    { fontSize: 14, fontWeight: '600', color: C.textPrimary },
+  catName:    { fontSize: 14, fontWeight: '600', color: T.textPrimary },
   catAmt:     { fontSize: 13, fontWeight: '700' },
-  catLimit:   { fontSize: 10, color: C.textMicro, marginTop: 4 },
-  catSep:     { height: 1, backgroundColor: C.border, marginLeft: 50 },
-  thinBarBg:  { height: 2, backgroundColor: '#F3F4F6', borderRadius: 1, overflow: 'hidden' },
+  catLimit:   { fontSize: 10, color: T.textMicro, marginTop: 4 },
+  catSep:     { height: 1, backgroundColor: T.border, marginLeft: 50 },
+  thinBarBg:  { height: 2, backgroundColor: T.border, borderRadius: 1, overflow: 'hidden' },
   thinBarFill:{ height: '100%' as any, borderRadius: 1 },
 
   // ── Transaction card
   txCard:    {
-    backgroundColor: C.card, borderRadius: 18, overflow: 'hidden',
-    borderWidth: 1, borderColor: C.border,
+    backgroundColor: T.card, borderRadius: 18, overflow: 'hidden',
+    borderWidth: 1, borderColor: T.border,
   },
   txRow:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   txIconBox: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: C.screen,
+    width: 36, height: 36, borderRadius: 10, backgroundColor: T.screen,
     justifyContent: 'center', alignItems: 'center', marginRight: 12, flexShrink: 0,
   },
   txBody:    { flex: 1, minWidth: 0 },
-  txDesc:    { fontSize: 14, fontWeight: '500', color: C.textPrimary, marginBottom: 2 },
-  txMeta:    { fontSize: 11, color: C.textMicro },
+  txDesc:    { fontSize: 14, fontWeight: '500', color: T.textPrimary, marginBottom: 2 },
+  txMeta:    { fontSize: 11, color: T.textMicro },
   txAmt:     { fontSize: 13, fontWeight: '700', marginLeft: 8, flexShrink: 0 },
-  txSep:     { height: 1, backgroundColor: C.border, marginLeft: 64 },
-  emptyTx:   { backgroundColor: C.card, borderRadius: 18, padding: 32, alignItems: 'center',
-               borderWidth: 1, borderColor: C.border },
+  txSep:     { height: 1, backgroundColor: T.border, marginLeft: 64 },
+  emptyTx:   { backgroundColor: T.card, borderRadius: 18, padding: 32, alignItems: 'center',
+               borderWidth: 1, borderColor: T.border },
   emptyTxIcon: { fontSize: 32, marginBottom: 10 },
-  emptyTxTitle:{ fontSize: 14, fontWeight: '600', color: C.textPrimary, marginBottom: 4 },
-  emptyTxSub:  { fontSize: 12, color: C.textMicro, textAlign: 'center' },
+  emptyTxTitle:{ fontSize: 14, fontWeight: '600', color: T.textPrimary, marginBottom: 4 },
+  emptyTxSub:  { fontSize: 12, color: T.textMicro, textAlign: 'center' },
 
   // ── FAB
   fab: {
     position: 'absolute', bottom: 28, right: 20,
-    backgroundColor: C.hero, borderRadius: 28,
+    backgroundColor: HERO_BG, borderRadius: 28,
     paddingHorizontal: 22, paddingVertical: 15,
   },
   fabText: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.2 },
@@ -728,24 +717,24 @@ const s = StyleSheet.create({
   // ── Quick Add sheet
   backdrop:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet:           {
-    backgroundColor: C.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: T.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingBottom: Platform.OS === 'ios' ? 36 : 20,
   },
   sheetPill:       {
     width: 36, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2,
     alignSelf: 'center', marginTop: 10, marginBottom: 14,
   },
-  sheetTitle:      { fontSize: 15, fontWeight: '700', color: C.textPrimary, paddingHorizontal: 22, marginBottom: 12 },
-  sheetDivider:    { height: 1, backgroundColor: C.border },
+  sheetTitle:      { fontSize: 15, fontWeight: '700', color: T.textPrimary, paddingHorizontal: 22, marginBottom: 12 },
+  sheetDivider:    { height: 1, backgroundColor: T.border },
   sheetOpt:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingVertical: 14, gap: 14 },
   sheetOptIcon:    { width: 46, height: 46, borderRadius: 13, justifyContent: 'center', alignItems: 'center' },
   sheetOptTitle:   { fontSize: 14, fontWeight: '600', marginBottom: 2 },
-  sheetOptSub:     { fontSize: 12, color: C.textMicro },
+  sheetOptSub:     { fontSize: 12, color: T.textMicro },
   chevron:         { fontSize: 20, color: '#D1D5DB' },
-  sheetSep:        { height: 1, backgroundColor: C.border, marginLeft: 82 },
+  sheetSep:        { height: 1, backgroundColor: T.border, marginLeft: 82 },
   sheetCancel:     {
-    margin: 16, backgroundColor: C.screen, borderRadius: 14,
+    margin: 16, backgroundColor: T.screen, borderRadius: 14,
     paddingVertical: 14, alignItems: 'center',
   },
-  sheetCancelText: { fontSize: 14, fontWeight: '600', color: C.textSec },
+  sheetCancelText: { fontSize: 14, fontWeight: '600', color: T.textSec },
 });

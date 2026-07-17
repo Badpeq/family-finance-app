@@ -6,6 +6,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useCategorias, ICON_MAP } from '@/hooks/useCategorias';
+import { T, R, MAXW } from '@/theme';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ export default function Pendientes() {
         <FlatList
           data={txs}
           keyExtractor={t => t.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[s.list, s.constrain]}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
           renderItem={({ item: tx }) => (
             <View style={s.card}>
@@ -264,79 +265,77 @@ export default function Pendientes() {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: '#F7F8FA' },
+  root:       { flex: 1, backgroundColor: T.screen },
   center:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  constrain:  { width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  headerWrap: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  headerWrap: { backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
   header:     {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingTop: Platform.OS === 'android' ? 44 : 12,
     paddingHorizontal: 16, paddingBottom: 14,
   },
   backBtn:    { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  backIcon:   { fontSize: 28, color: '#374151', lineHeight: 32 },
-  title:      { fontSize: 18, fontWeight: '800', color: '#111827' },
-  subtitle:   { fontSize: 12, color: '#6B7280', marginTop: 1 },
+  backIcon:   { fontSize: 28, color: T.textSec, lineHeight: 32 },
+  title:      { fontSize: 18, fontWeight: '800', color: T.textPrimary },
+  subtitle:   { fontSize: 12, color: T.textSec, marginTop: 1 },
 
   list:       { padding: 16 },
 
   card:       {
-    backgroundColor: '#fff', borderRadius: 14,
-    padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    backgroundColor: T.card, borderRadius: R.card,
+    padding: 16, borderWidth: 1, borderColor: T.border,
   },
   cardTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardLeft:   { flex: 1, marginRight: 12 },
-  comercio:   { fontSize: 15, fontWeight: '700', color: '#111827' },
-  cardMeta:   { fontSize: 12, color: '#9CA3AF', marginTop: 3 },
-  monto:      { fontSize: 17, fontWeight: '800', color: '#DC2626' },
+  comercio:   { fontSize: 15, fontWeight: '700', color: T.textPrimary },
+  cardMeta:   { fontSize: 12, color: T.textMicro, marginTop: 3 },
+  monto:      { fontSize: 17, fontWeight: '800', color: T.red },
 
   rawBtn:     { marginTop: 10, alignSelf: 'flex-start' },
-  rawBtnText: { fontSize: 12, color: '#7C3AED', fontWeight: '600' },
+  rawBtnText: { fontSize: 12, color: T.accent, fontWeight: '600' },
 
   actions:    { flexDirection: 'row', gap: 10, marginTop: 14 },
   btnReject:  {
-    flex: 1, paddingVertical: 10, borderRadius: 10,
-    backgroundColor: '#FEE2E2', alignItems: 'center',
+    flex: 1, paddingVertical: 10, borderRadius: R.control,
+    backgroundColor: T.redSoft, alignItems: 'center',
   },
-  btnRejectText: { fontSize: 13, fontWeight: '700', color: '#DC2626' },
+  btnRejectText: { fontSize: 13, fontWeight: '700', color: T.red },
   btnConfirm: {
-    flex: 2, paddingVertical: 10, borderRadius: 10,
-    backgroundColor: '#7C3AED', alignItems: 'center',
+    flex: 2, paddingVertical: 10, borderRadius: R.control,
+    backgroundColor: T.accent, alignItems: 'center',
   },
   btnConfirmText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
   empty:      { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyIcon:  { fontSize: 52, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 8 },
-  emptyBody:  { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: T.textPrimary, marginBottom: 8 },
+  emptyBody:  { fontSize: 14, color: T.textSec, textAlign: 'center', lineHeight: 22 },
 
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
 
-  rawModal:   { backgroundColor: '#fff', borderRadius: 16, padding: 20, maxHeight: '70%' },
-  rawModalTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 12 },
-  rawScroll:  { maxHeight: 300 },
-  rawText:    { fontSize: 13, color: '#374151', lineHeight: 20 },
-  rawClose:   { marginTop: 16, alignItems: 'center', paddingVertical: 12,
-                backgroundColor: '#F3F4F6', borderRadius: 10 },
-  rawCloseText: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  rawModal:      { backgroundColor: T.card, borderRadius: R.card, padding: 20, maxHeight: '70%' },
+  rawModalTitle: { fontSize: 15, fontWeight: '700', color: T.textPrimary, marginBottom: 12 },
+  rawScroll:     { maxHeight: 300 },
+  rawText:       { fontSize: 13, color: T.textSec, lineHeight: 20 },
+  rawClose:      { marginTop: 16, alignItems: 'center', paddingVertical: 12,
+                   backgroundColor: T.screen, borderRadius: R.control },
+  rawCloseText:  { fontSize: 14, fontWeight: '600', color: T.textSec },
 
-  catModal:   {
-    backgroundColor: '#fff', borderRadius: 20,
-    padding: 20, maxHeight: '80%',
-    alignSelf: 'stretch',
+  catModal:      {
+    backgroundColor: T.card, borderRadius: 20,
+    padding: 20, maxHeight: '80%', alignSelf: 'stretch',
   },
-  catModalTitle: { fontSize: 17, fontWeight: '800', color: '#111827', marginBottom: 4 },
-  catModalSub:   { fontSize: 13, color: '#6B7280', marginBottom: 16 },
-  catList:    { maxHeight: 380 },
-  catRow:     {
+  catModalTitle: { fontSize: 17, fontWeight: '800', color: T.textPrimary, marginBottom: 4 },
+  catModalSub:   { fontSize: 13, color: T.textSec, marginBottom: 16 },
+  catList:       { maxHeight: 380 },
+  catRow:        {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F9FAFB',
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  catIcon:    { fontSize: 22 },
-  catName:    { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
-  catCancel:  { marginTop: 16, alignItems: 'center', paddingVertical: 13,
-                backgroundColor: '#F3F4F6', borderRadius: 12 },
-  catCancelText: { fontSize: 14, fontWeight: '600', color: '#6B7280' },
+  catIcon:       { fontSize: 22 },
+  catName:       { flex: 1, fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  catCancel:     { marginTop: 16, alignItems: 'center', paddingVertical: 13,
+                   backgroundColor: T.screen, borderRadius: R.control },
+  catCancelText: { fontSize: 14, fontWeight: '600', color: T.textSec },
 });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { T } from '@/theme';
 
 interface Props {
   value: string;           // YYYY-MM-DD  (empty = sin selección)
@@ -29,13 +30,13 @@ function DatePickerWeb({ value, onChange, inputStyle, placeholder }: Props) {
         style={{
           height: 48,
           width: '100%',
-          backgroundColor: '#F9FAFB',
-          border: '1px solid #E5E7EB',
+          backgroundColor: T.input,
+          border: `1px solid ${T.inputBorder}`,
           borderRadius: 10,
           paddingLeft: 14,
           paddingRight: 14,
           fontSize: 15,
-          color: value ? '#111827' : '#9CA3AF',
+          color: value ? T.textPrimary : T.textMicro,
           boxSizing: 'border-box',
           outline: 'none',
           fontFamily: 'inherit',
@@ -92,8 +93,8 @@ export function DatePickerInput(props: Props) {
 
 const styles = StyleSheet.create({
   wrap:        { width: '100%' },
-  btn:         { height: 48, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  txt:         { fontSize: 15, color: '#111827' },
-  placeholder: { color: '#9CA3AF' },
+  btn:         { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  txt:         { fontSize: 15, color: T.textPrimary },
+  placeholder: { color: T.textMicro },
   icon:        { fontSize: 16 },
 });

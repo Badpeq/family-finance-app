@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useCategorias, BASE_INCOME_CATS } from '@/hooks/useCategorias';
+import { T, R, MAXW } from '@/theme';
 
 // ── Types ─────────────────────────────────────────────────────
 type GastoTab   = 'unica' | 'recurrente' | 'cuotas';
@@ -57,8 +58,8 @@ function fmtDeuda(simbolo: string, monto: number, linea: number) {
 export default function Registrar() {
   const { tipo, moneda } = useLocalSearchParams<{ tipo: string; moneda: string }>();
   const esIngreso = tipo === 'ingreso';
-  const accent    = esIngreso ? '#059669' : '#DC2626';
-  const headerBg  = esIngreso ? '#D1FAE5' : '#FEE2E2';
+  const accent    = esIngreso ? T.green : T.red;
+  const headerBg  = esIngreso ? T.greenSoft : T.redSoft;
 
   // ── Categorías dinámicas desde DB
   const { categorias: catGasto } = useCategorias();
@@ -393,7 +394,7 @@ export default function Registrar() {
             <Text style={styles.label}>Monto</Text>
             <View style={styles.montoWrap}>
               <Text style={[styles.montoPrefix, { color: accent }]}>{simbolo}</Text>
-              <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor="#9CA3AF"
+              <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad" value={iU.monto}
                 onChangeText={v => setIU(s => ({ ...s, monto: v }))}
                 editable={!loading} autoFocus />
@@ -407,7 +408,7 @@ export default function Registrar() {
             </TouchableOpacity>
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Sueldo de julio"
-              placeholderTextColor="#9CA3AF" value={iU.descripcion}
+              placeholderTextColor={T.textMicro} value={iU.descripcion}
               onChangeText={v => setIU(s => ({ ...s, descripcion: v }))}
               multiline editable={!loading} textAlignVertical="top" />
           </>
@@ -419,7 +420,7 @@ export default function Registrar() {
             <Text style={styles.label}>Monto</Text>
             <View style={styles.montoWrap}>
               <Text style={[styles.montoPrefix, { color: accent }]}>{simbolo}</Text>
-              <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor="#9CA3AF"
+              <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad" value={gU.monto}
                 onChangeText={v => setGU(s => ({ ...s, monto: v }))}
                 editable={!loading} autoFocus />
@@ -459,7 +460,7 @@ export default function Registrar() {
             {gU.metodoPago === 'tarjeta' && <TarjetaSelector />}
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Supermercado del lunes"
-              placeholderTextColor="#9CA3AF" value={gU.descripcion}
+              placeholderTextColor={T.textMicro} value={gU.descripcion}
               onChangeText={v => setGU(s => ({ ...s, descripcion: v }))}
               multiline editable={!loading} textAlignVertical="top" />
           </>
@@ -474,7 +475,7 @@ export default function Registrar() {
             <Text style={styles.label}>Monto mensual</Text>
             <View style={styles.montoWrap}>
               <Text style={[styles.montoPrefix, { color: accent }]}>{simbolo}</Text>
-              <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor="#9CA3AF"
+              <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad" value={gR.monto}
                 onChangeText={v => setGR(s => ({ ...s, monto: v }))}
                 editable={!loading} autoFocus />
@@ -488,27 +489,27 @@ export default function Registrar() {
             </TouchableOpacity>
             <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
             <TextInput style={[styles.input, styles.inputMulti]} placeholder="Ej: Netflix, Gym, Internet"
-              placeholderTextColor="#9CA3AF" value={gR.descripcion}
+              placeholderTextColor={T.textMicro} value={gR.descripcion}
               onChangeText={v => setGR(s => ({ ...s, descripcion: v }))}
               multiline editable={!loading} textAlignVertical="top" />
             <View style={styles.row}>
               <View style={styles.col}>
                 <Text style={styles.label}>Día de cobro</Text>
-                <TextInput style={styles.input} placeholder="15" placeholderTextColor="#9CA3AF"
+                <TextInput style={styles.input} placeholder="15" placeholderTextColor={T.textMicro}
                   keyboardType="number-pad" value={gR.diaCobro}
                   onChangeText={v => setGR(s => ({ ...s, diaCobro: v }))}
                   editable={!loading} maxLength={2} />
               </View>
               <View style={[styles.col, { marginLeft: 12 }]}>
                 <Text style={styles.label}>Mes de inicio</Text>
-                <TextInput style={styles.input} placeholder="06/2026" placeholderTextColor="#9CA3AF"
+                <TextInput style={styles.input} placeholder="06/2026" placeholderTextColor={T.textMicro}
                   keyboardType="numbers-and-punctuation" value={gR.mesInicio}
                   onChangeText={v => setGR(s => ({ ...s, mesInicio: v }))}
                   editable={!loading} maxLength={7} />
               </View>
             </View>
             <Text style={styles.label}>Mes de fin <Text style={styles.optional}>(opcional)</Text></Text>
-            <TextInput style={styles.input} placeholder="12/2026" placeholderTextColor="#9CA3AF"
+            <TextInput style={styles.input} placeholder="12/2026" placeholderTextColor={T.textMicro}
               keyboardType="numbers-and-punctuation" value={gR.mesFin}
               onChangeText={v => setGR(s => ({ ...s, mesFin: v }))}
               editable={!loading} maxLength={7} />
@@ -523,7 +524,7 @@ export default function Registrar() {
             </View>
             <Text style={styles.label}>Descripción</Text>
             <TextInput style={styles.input} placeholder="Ej: Laptop HP, Refrigeradora Samsung"
-              placeholderTextColor="#9CA3AF" value={gC.descripcion}
+              placeholderTextColor={T.textMicro} value={gC.descripcion}
               onChangeText={v => setGC(s => ({ ...s, descripcion: v }))}
               editable={!loading} autoFocus />
             <View style={styles.row}>
@@ -531,7 +532,7 @@ export default function Registrar() {
                 <Text style={styles.label}>Monto total</Text>
                 <View style={styles.montoWrap}>
                   <Text style={[styles.montoPrefix, { color: accent }]}>{simbolo}</Text>
-                  <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor="#9CA3AF"
+                  <TextInput style={styles.montoInput} placeholder="0.00" placeholderTextColor={T.textMicro}
                     keyboardType="decimal-pad" value={gC.montoTotal}
                     onChangeText={v => setGC(s => ({ ...s, montoTotal: v }))} editable={!loading} />
                 </View>
@@ -539,7 +540,7 @@ export default function Registrar() {
               <View style={[styles.col, { marginLeft: 12 }]}>
                 <Text style={styles.label}>N° cuotas</Text>
                 <TextInput style={[styles.input, { fontSize: 20, fontWeight: '700' }]}
-                  placeholder="12" placeholderTextColor="#9CA3AF"
+                  placeholder="12" placeholderTextColor={T.textMicro}
                   keyboardType="number-pad" value={gC.totalCuotas}
                   onChangeText={v => setGC(s => ({ ...s, totalCuotas: v }))}
                   editable={!loading} maxLength={3} />
@@ -570,14 +571,14 @@ export default function Registrar() {
             <View style={styles.row}>
               <View style={styles.col}>
                 <Text style={styles.label}>Día de cobro</Text>
-                <TextInput style={styles.input} placeholder="15" placeholderTextColor="#9CA3AF"
+                <TextInput style={styles.input} placeholder="15" placeholderTextColor={T.textMicro}
                   keyboardType="number-pad" value={gC.diaCobro}
                   onChangeText={v => setGC(s => ({ ...s, diaCobro: v }))}
                   editable={!loading} maxLength={2} />
               </View>
               <View style={[styles.col, { marginLeft: 12 }]}>
                 <Text style={styles.label}>Mes de inicio</Text>
-                <TextInput style={styles.input} placeholder="06/2026" placeholderTextColor="#9CA3AF"
+                <TextInput style={styles.input} placeholder="06/2026" placeholderTextColor={T.textMicro}
                   keyboardType="numbers-and-punctuation" value={gC.mesInicio}
                   onChangeText={v => setGC(s => ({ ...s, mesInicio: v }))}
                   editable={!loading} maxLength={7} />
@@ -711,28 +712,28 @@ export default function Registrar() {
             <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
               <Text style={styles.label}>Banco <Text style={styles.required}>*</Text></Text>
               <TextInput style={styles.input} placeholder="Ej: BCP, BBVA, Scotiabank"
-                placeholderTextColor="#9CA3AF" value={nuevaTarjeta.banco}
+                placeholderTextColor={T.textMicro} value={nuevaTarjeta.banco}
                 onChangeText={v => setNuevaTarjeta(s => ({ ...s, banco: v }))} autoFocus />
               <Text style={[styles.label, { marginTop: 16 }]}>Nombre de la tarjeta <Text style={styles.required}>*</Text></Text>
               <TextInput style={styles.input} placeholder="Ej: Visa Clásica, Mastercard Oro"
-                placeholderTextColor="#9CA3AF" value={nuevaTarjeta.nombre}
+                placeholderTextColor={T.textMicro} value={nuevaTarjeta.nombre}
                 onChangeText={v => setNuevaTarjeta(s => ({ ...s, nombre: v }))} />
               <View style={styles.row}>
                 <View style={styles.col}>
                   <Text style={[styles.label, { marginTop: 16 }]}>Línea de crédito <Text style={styles.optional}>(opcional)</Text></Text>
-                  <TextInput style={styles.input} placeholder="5000" placeholderTextColor="#9CA3AF"
+                  <TextInput style={styles.input} placeholder="5000" placeholderTextColor={T.textMicro}
                     keyboardType="decimal-pad" value={nuevaTarjeta.linea}
                     onChangeText={v => setNuevaTarjeta(s => ({ ...s, linea: v }))} />
                 </View>
                 <View style={[styles.col, { marginLeft: 12 }]}>
                   <Text style={[styles.label, { marginTop: 16 }]}>Día de cierre <Text style={styles.optional}>(opcional)</Text></Text>
-                  <TextInput style={styles.input} placeholder="15" placeholderTextColor="#9CA3AF"
+                  <TextInput style={styles.input} placeholder="15" placeholderTextColor={T.textMicro}
                     keyboardType="number-pad" maxLength={2} value={nuevaTarjeta.cierre}
                     onChangeText={v => setNuevaTarjeta(s => ({ ...s, cierre: v }))} />
                 </View>
               </View>
               <Text style={[styles.label, { marginTop: 16 }]}>Deuda Vigente Inicial <Text style={styles.optional}>(opcional)</Text></Text>
-              <TextInput style={styles.input} placeholder="0.00" placeholderTextColor="#9CA3AF"
+              <TextInput style={styles.input} placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad" value={nuevaTarjeta.deudaInicial}
                 onChangeText={v => setNuevaTarjeta(s => ({ ...s, deudaInicial: v }))} />
               {(() => {
@@ -742,9 +743,9 @@ export default function Registrar() {
                 const disponible = Math.max(0, linea - deuda);
                 return (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between',
-                    backgroundColor: '#F0FDF4', borderRadius: 10, padding: 12, marginTop: 8 }}>
-                    <Text style={{ fontSize: 13, color: '#374151' }}>Saldo Disponible</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#059669' }}>
+                    backgroundColor: T.greenSoft, borderRadius: 10, padding: 12, marginTop: 8 }}>
+                    <Text style={{ fontSize: 13, color: T.textSec }}>Saldo Disponible</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: T.green }}>
                       {simbolo} {disponible.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                     </Text>
                   </View>
@@ -769,7 +770,7 @@ export default function Registrar() {
 
 // ── Styles ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  container: { flex: 1, backgroundColor: T.screen },
   header: {
     paddingHorizontal: 24,
     paddingTop: Platform.select({ ios: 0, android: 32, default: 24 }),
@@ -778,49 +779,49 @@ const styles = StyleSheet.create({
   backText: { fontSize: 15, fontWeight: '500', marginBottom: 8 },
   title:    { fontSize: 22, fontWeight: '800' },
 
-  tabs: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  tabs: { flexDirection: 'row', backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
   tab:  { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 12, textAlign: 'center', color: '#9CA3AF', lineHeight: 17 },
+  tabText: { fontSize: 12, textAlign: 'center', color: T.textMicro, lineHeight: 17 },
 
-  form: { padding: 24, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  form: { padding: 24, width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  error: { backgroundColor: '#FEE2E2', color: '#DC2626', borderRadius: 10, padding: 12, marginBottom: 8, fontSize: 14 },
-  hint:  { backgroundColor: '#F3F4F6', borderRadius: 10, padding: 12, marginTop: 8, marginBottom: 4 },
-  hintText: { fontSize: 13, color: '#6B7280', lineHeight: 19 },
+  error: { backgroundColor: T.redSoft, color: T.red, borderRadius: 10, padding: 12, marginBottom: 8, fontSize: 14 },
+  hint:  { backgroundColor: T.screen, borderRadius: 10, padding: 12, marginTop: 8, marginBottom: 4 },
+  hintText: { fontSize: 13, color: T.textSec, lineHeight: 19 },
 
-  label:    { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 20 },
-  optional: { fontWeight: '400', color: '#9CA3AF' },
-  required: { color: '#EF4444' },
+  label:    { fontSize: 13, fontWeight: '600', color: T.textSec, marginBottom: 8, marginTop: 20 },
+  optional: { fontWeight: '400', color: T.textMicro },
+  required: { color: T.red },
 
   toggle: {
-    flexDirection: 'row', borderRadius: 12, borderWidth: 1,
-    borderColor: '#E5E7EB', overflow: 'hidden', backgroundColor: '#fff',
+    flexDirection: 'row', borderRadius: R.control, borderWidth: 1,
+    borderColor: T.inputBorder, overflow: 'hidden', backgroundColor: T.card,
   },
   toggleBtn:    { flex: 1, paddingVertical: 13, alignItems: 'center' },
-  toggleActive: { backgroundColor: '#FEF2F2' },
-  toggleText:   { fontSize: 14, fontWeight: '500', color: '#6B7280' },
+  toggleActive: { backgroundColor: T.redSoft },
+  toggleText:   { fontSize: 14, fontWeight: '500', color: T.textSec },
 
   montoWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, height: 58,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, height: 58,
   },
   montoPrefix: { fontSize: 20, fontWeight: '700', marginRight: 8 },
-  montoInput:  { flex: 1, fontSize: 24, fontWeight: '700', color: '#111827', minWidth: 0 },
+  montoInput:  { flex: 1, fontSize: 24, fontWeight: '700', color: T.textPrimary, minWidth: 0 },
 
   selector: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, height: 52, minHeight: 52,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, height: 52, minHeight: 52,
   },
-  selectorText:        { fontSize: 15, color: '#111827', flexShrink: 1 },
-  selectorSubtext:     { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  selectorPlaceholder: { fontSize: 15, color: '#9CA3AF' },
-  chevron:             { fontSize: 20, color: '#9CA3AF', flexShrink: 0 },
+  selectorText:        { fontSize: 15, color: T.textPrimary, flexShrink: 1 },
+  selectorSubtext:     { fontSize: 12, color: T.textMicro, marginTop: 2 },
+  selectorPlaceholder: { fontSize: 15, color: T.textMicro },
+  chevron:             { fontSize: 20, color: T.textMicro, flexShrink: 0 },
 
   input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, fontSize: 16, color: '#111827', height: 52,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, fontSize: 16, color: T.textPrimary, height: 52,
   },
   inputMulti: { height: 80, paddingTop: 14, paddingBottom: 14, textAlignVertical: 'top' },
 
@@ -828,11 +829,11 @@ const styles = StyleSheet.create({
   col: { flex: 1 },
 
   cuotaPreview: {
-    marginTop: 12, borderRadius: 12, padding: 16,
+    marginTop: 12, borderRadius: R.control, padding: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: T.redSoft,
   },
-  cuotaLabel: { fontSize: 13, color: '#6B7280', fontWeight: '500' },
+  cuotaLabel: { fontSize: 13, color: T.textSec, fontWeight: '500' },
   cuotaValue: { fontSize: 20, fontWeight: '800' },
 
   btn:         { height: 54, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 32 },
@@ -841,30 +842,30 @@ const styles = StyleSheet.create({
 
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: T.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     maxHeight: '70%', paddingBottom: 24,
   },
   sheetHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
+  sheetTitle: { fontSize: 16, fontWeight: '600', color: T.textPrimary },
   closeBtn:   { fontSize: 15, fontWeight: '500' },
   option: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 14,
   },
-  optionText: { fontSize: 15, color: '#111827' },
+  optionText: { fontSize: 15, color: T.textPrimary },
   checkmark:  { fontSize: 18, fontWeight: '600' },
-  sep:        { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
-  emptyMsg:   { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+  sep:        { height: 1, backgroundColor: T.border, marginHorizontal: 20 },
+  emptyMsg:   { fontSize: 14, color: T.textSec, textAlign: 'center' },
 
   // Multi-moneda
   currencyRow:    { flexDirection:'row', alignItems:'center', gap:10, marginBottom:8, flexWrap:'wrap' },
-  currencyLabel:  { fontSize:13, fontWeight:'600', color:'#374151' },
-  currencyToggle: { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, gap:0 },
+  currencyLabel:  { fontSize:13, fontWeight:'600', color:T.textSec },
+  currencyToggle: { flexDirection:'row', backgroundColor:T.screen, borderRadius:10, padding:3, gap:0 },
   currencyBtn:    { paddingHorizontal:14, paddingVertical:7, borderRadius:8 },
-  currencyBtnText:{ fontSize:13, fontWeight:'600', color:'#6B7280' },
-  rateHint:       { fontSize:11, color:'#9CA3AF', fontStyle:'italic' },
+  currencyBtnText:{ fontSize:13, fontWeight:'600', color:T.textSec },
+  rateHint:       { fontSize:11, color:T.textMicro, fontStyle:'italic' },
 });

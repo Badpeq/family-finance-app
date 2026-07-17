@@ -6,6 +6,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useCategorias, iconForCat } from '@/hooks/useCategorias';
+import { T, R, MAXW } from '@/theme';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -239,7 +240,7 @@ export default function GestionarDeudas() {
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#7C3AED" style={{ marginTop: 48 }} />
+        <ActivityIndicator color={T.accent} style={{ marginTop: 48 }} />
       ) : (
         <ScrollView contentContainerStyle={s.scroll}>
 
@@ -254,7 +255,7 @@ export default function GestionarDeudas() {
               </View>
               <View style={s.summaryDivider} />
               <View style={s.summaryCol}>
-                <Text style={[s.summaryAmt, { color: '#DC2626' }]}>{fmt(totalDeudaGlobal)}</Text>
+                <Text style={[s.summaryAmt, { color: T.red }]}>{fmt(totalDeudaGlobal)}</Text>
                 <Text style={s.summaryLabel}>Deuda total</Text>
                 <Text style={s.summarySub}>cuotas pendientes</Text>
               </View>
@@ -334,7 +335,7 @@ export default function GestionarDeudas() {
                     <View style={s.progressBg}>
                       <View style={[s.progressFill, {
                         width: `${Math.round(pct * 100)}%` as any,
-                        backgroundColor: finished ? '#9CA3AF' : '#7C3AED',
+                        backgroundColor: finished ? T.textMicro : T.accent,
                       }]} />
                     </View>
                     {/* Deuda pendiente */}
@@ -388,7 +389,7 @@ export default function GestionarDeudas() {
 
               <Text style={s.lbl}>Descripción</Text>
               <TextInput style={s.inp} value={recDesc} onChangeText={setRecDesc}
-                placeholder="Opcional" placeholderTextColor="#9CA3AF" />
+                placeholder="Opcional" placeholderTextColor={T.textMicro} />
 
               <Text style={s.lbl}>Día de cobro (1–31)</Text>
               <TextInput style={s.inp} keyboardType="number-pad" value={recDia} onChangeText={setRecDia} />
@@ -397,7 +398,7 @@ export default function GestionarDeudas() {
                 Mes de finalización <Text style={s.optional}>(opcional — formato AAAA-MM)</Text>
               </Text>
               <TextInput style={s.inp} value={recMesFin} onChangeText={setRecMesFin}
-                placeholder="Ej: 2025-12" placeholderTextColor="#9CA3AF" keyboardType="numeric" />
+                placeholder="Ej: 2025-12" placeholderTextColor={T.textMicro} keyboardType="numeric" />
               <Text style={s.hint}>Deja vacío si el gasto no tiene fecha de fin.</Text>
 
               {!!recError && <View style={s.errBox}><Text style={s.errText}>{recError}</Text></View>}
@@ -574,21 +575,21 @@ export default function GestionarDeudas() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F3F4F6' },
+  safe: { flex: 1, backgroundColor: T.screen },
 
   header:  {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: Platform.OS === 'android' ? 44 : 12,
     paddingHorizontal: 20, paddingBottom: 14,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border,
   },
   backBtn: { width: 70 },
-  backText:{ fontSize: 16, color: '#3B82F6', fontWeight: '500' },
-  title:   { fontSize: 18, fontWeight: '700', color: '#111827' },
+  backText:{ fontSize: 16, color: T.accent, fontWeight: '500' },
+  title:   { fontSize: 18, fontWeight: '700', color: T.textPrimary },
 
-  scroll: { padding: 16 },
+  scroll: { padding: 16, width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  // Summary card
+  // Summary card (dark card — colores intencionales, no tocar)
   summaryCard:    { backgroundColor: '#0F172A', borderRadius: 20, padding: 20, marginBottom: 24 },
   summaryTitle:   { fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 14 },
   summaryRow:     { flexDirection: 'row' },
@@ -600,87 +601,87 @@ const s = StyleSheet.create({
 
   // Section headers
   sectionHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  sectionCount: { fontSize: 12, color: '#9CA3AF' },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: T.textPrimary },
+  sectionCount: { fontSize: 12, color: T.textMicro },
 
   // Cards
   card:         {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-    borderRadius: 14, padding: 12, marginBottom: 8,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: T.card,
+    borderRadius: R.card, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: T.border,
   },
   cardInactive: { opacity: 0.5 },
-  cardIcon:     { width: 38, height: 38, borderRadius: 10, backgroundColor: '#F3F4F6',
+  cardIcon:     { width: 38, height: 38, borderRadius: 10, backgroundColor: T.screen,
                   justifyContent: 'center', alignItems: 'center', marginRight: 10, flexShrink: 0 },
   cardBody:     { flex: 1, minWidth: 0 },
-  cardName:     { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 2 },
-  cardMeta:     { fontSize: 11, color: '#9CA3AF', marginBottom: 4 },
+  cardName:     { fontSize: 14, fontWeight: '600', color: T.textPrimary, marginBottom: 2 },
+  cardMeta:     { fontSize: 11, color: T.textMicro, marginBottom: 4 },
   cardRight:    { alignItems: 'flex-end', marginHorizontal: 8, flexShrink: 0 },
-  cardAmt:      { fontSize: 14, fontWeight: '700', color: '#111827' },
-  cardAmtSub:   { fontSize: 10, color: '#9CA3AF' },
+  cardAmt:      { fontSize: 14, fontWeight: '700', color: T.textPrimary },
+  cardAmtSub:   { fontSize: 10, color: T.textMicro },
   cardActions:  { flexDirection: 'column', gap: 6, marginLeft: 4 },
-  actionBtn:    { width: 30, height: 30, borderRadius: 8, backgroundColor: '#EFF6FF',
+  actionBtn:    { width: 30, height: 30, borderRadius: 8, backgroundColor: T.accentSoft,
                   justifyContent: 'center', alignItems: 'center' },
-  actionBtnRed: { backgroundColor: '#FEF2F2' },
-  actionEdit:   { fontSize: 14, color: '#3B82F6' },
-  actionDelete: { fontSize: 12, color: '#DC2626' },
+  actionBtnRed: { backgroundColor: T.redSoft },
+  actionEdit:   { fontSize: 14, color: T.accent },
+  actionDelete: { fontSize: 12, color: T.red },
 
   // Progress / debt
-  progressBg:   { height: 4, backgroundColor: '#F3F4F6', borderRadius: 2, overflow: 'hidden', marginBottom: 4 },
+  progressBg:   { height: 4, backgroundColor: T.border, borderRadius: 2, overflow: 'hidden', marginBottom: 4 },
   progressFill: { height: '100%' as any, borderRadius: 2 },
-  deudaTag:     { fontSize: 11, color: '#374151', lineHeight: 16 },
-  deudaAmt:     { fontWeight: '700', color: '#DC2626' },
-  finishedTag:  { fontSize: 11, color: '#059669', fontWeight: '600' },
+  deudaTag:     { fontSize: 11, color: T.textSec, lineHeight: 16 },
+  deudaAmt:     { fontWeight: '700', color: T.red },
+  finishedTag:  { fontSize: 11, color: T.green, fontWeight: '600' },
 
-  emptyBox:  { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 8 },
-  emptyText: { fontSize: 13, color: '#9CA3AF', textAlign: 'center' },
+  emptyBox:  { backgroundColor: T.card, borderRadius: R.control, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: T.border },
+  emptyText: { fontSize: 13, color: T.textMicro, textAlign: 'center' },
 
   // Sheet modal
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', alignItems: 'center' },
-  sheet:      { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-                width: '100%', maxWidth: 600, maxHeight: '90%', paddingHorizontal: 24 },
+  sheet:      { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+                width: '100%', maxWidth: MAXW, maxHeight: '90%', paddingHorizontal: 24 },
   sheetHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                 paddingTop: 20, paddingBottom: 16 },
-  sheetTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
-  closeBtn:   { fontSize: 18, color: '#9CA3AF', padding: 4 },
-  lbl:        { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 },
-  optional:   { fontWeight: '400', color: '#9CA3AF' },
-  hint:       { fontSize: 11, color: '#9CA3AF', marginBottom: 14, marginTop: -10 },
-  inp:        { height: 48, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB',
-                borderRadius: 10, paddingHorizontal: 14, fontSize: 15, color: '#111827', marginBottom: 14 },
-  pickerRow:  { height: 48, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB',
-                borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center',
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: T.textPrimary },
+  closeBtn:   { fontSize: 18, color: T.textMicro, padding: 4 },
+  lbl:        { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 6 },
+  optional:   { fontWeight: '400', color: T.textMicro },
+  hint:       { fontSize: 11, color: T.textMicro, marginBottom: 14, marginTop: -10 },
+  inp:        { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+                borderRadius: R.control, paddingHorizontal: 14, fontSize: 15, color: T.textPrimary, marginBottom: 14 },
+  pickerRow:  { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+                borderRadius: R.control, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center',
                 justifyContent: 'space-between', marginBottom: 14 },
-  pickerText: { fontSize: 15, color: '#111827' },
-  chevron:    { fontSize: 20, color: '#9CA3AF' },
-  infoBox:    { backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 14 },
-  infoText:   { fontSize: 12, color: '#1E40AF', lineHeight: 18 },
-  errBox:     { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 12 },
-  errText:    { color: '#DC2626', fontSize: 13 },
+  pickerText: { fontSize: 15, color: T.textPrimary },
+  chevron:    { fontSize: 20, color: T.textMicro },
+  infoBox:    { backgroundColor: T.accentSoft, borderRadius: R.control, padding: 12, marginBottom: 14 },
+  infoText:   { fontSize: 12, color: T.accentDark, lineHeight: 18 },
+  errBox:     { backgroundColor: T.redSoft, borderRadius: R.control, padding: 12, marginBottom: 12 },
+  errText:    { color: T.red, fontSize: 13 },
   rowBtns:    { flexDirection: 'row', gap: 10, marginTop: 4 },
-  cancelBtn:  { flex: 1, height: 48, backgroundColor: '#F3F4F6', borderRadius: 10,
+  cancelBtn:  { flex: 1, height: 48, backgroundColor: T.screen, borderRadius: R.control,
                 justifyContent: 'center', alignItems: 'center' },
-  cancelText: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  saveBtn:    { flex: 1, height: 48, backgroundColor: '#7C3AED', borderRadius: 10,
+  cancelText: { fontSize: 15, color: T.textSec, fontWeight: '500' },
+  saveBtn:    { flex: 1, height: 48, backgroundColor: T.accent, borderRadius: R.control,
                 justifyContent: 'center', alignItems: 'center' },
   saveBtnText:{ fontSize: 15, color: '#fff', fontWeight: '600' },
   btnOff:     { opacity: 0.6 },
   catRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  catText:    { fontSize: 15, color: '#374151' },
-  checkMark:  { fontSize: 16, color: '#7C3AED', fontWeight: '600' },
+                paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: T.border },
+  catText:    { fontSize: 15, color: T.textSec },
+  checkMark:  { fontSize: 16, color: T.accent, fontWeight: '600' },
 
   // Confirm dialogs
   confirmBg:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center',
                         alignItems: 'center', padding: 20 },
-  confirmBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
-  confirmTitle:      { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  confirmSub:        { fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 20 },
+  confirmBox:        { backgroundColor: T.card, borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
+  confirmTitle:      { fontSize: 16, fontWeight: '700', color: T.textPrimary, marginBottom: 10 },
+  confirmSub:        { fontSize: 13, color: T.textSec, lineHeight: 20, marginBottom: 20 },
   confirmBtns:       { flexDirection: 'row', gap: 10 },
-  confirmCancel:     { flex: 1, height: 46, backgroundColor: '#F3F4F6', borderRadius: 12,
+  confirmCancel:     { flex: 1, height: 46, backgroundColor: T.screen, borderRadius: R.control,
                        justifyContent: 'center', alignItems: 'center' },
-  confirmCancelText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  confirmDanger:     { flex: 1, height: 46, backgroundColor: '#DC2626', borderRadius: 12,
+  confirmCancelText: { fontSize: 14, color: T.textSec, fontWeight: '500' },
+  confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: R.control,
                        justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 14, color: '#fff', fontWeight: '600' },
 });

@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { toPEN, toUSD } from '@/services/exchangeRate';
+import { T, R, MAXW } from '@/theme';
 
 type Subtipo = 'abono' | 'retiro' | 'interes';
 
@@ -29,11 +30,11 @@ const TABS: { key: Subtipo; label: string; accent: string; headerBg: string; des
     desc: 'Transfiere dinero de tus ingresos al fondo. Reduce tu balance disponible y suma al saldo de la cuenta.',
   },
   {
-    key: 'retiro', label: 'Retiro', accent: '#7C3AED', headerBg: '#EDE9FE',
+    key: 'retiro', label: 'Retiro', accent: T.accent, headerBg: T.accentSoft,
     desc: 'Rescata dinero del fondo hacia tu balance disponible. Resta del saldo de la cuenta.',
   },
   {
-    key: 'interes', label: 'Interés / Rendimiento', accent: '#059669', headerBg: '#D1FAE5',
+    key: 'interes', label: 'Interés / Rendimiento', accent: T.green, headerBg: T.greenSoft,
     desc: 'Registra rendimientos o intereses ganados. Suma al saldo de la cuenta sin afectar tu balance corriente.',
   },
 ];
@@ -345,7 +346,7 @@ export default function Ahorros() {
               <Text style={[styles.montoPrefix, { color: tab.accent }]}>{txMoneda === 'USD' ? '$' : simbolo}</Text>
               <TextInput
                 style={styles.montoInput}
-                placeholder="0.00" placeholderTextColor="#9CA3AF"
+                placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad" value={monto}
                 onChangeText={setMonto} editable={!loading}
               />
@@ -356,7 +357,7 @@ export default function Ahorros() {
             <TextInput
               style={[styles.input, styles.inputMulti]}
               placeholder="Ej: Ahorro mensual programado, Interés de julio"
-              placeholderTextColor="#9CA3AF" value={descripcion}
+              placeholderTextColor={T.textMicro} value={descripcion}
               onChangeText={setDesc} multiline editable={!loading} textAlignVertical="top"
             />
 
@@ -429,7 +430,7 @@ export default function Ahorros() {
                 <TextInput
                   style={styles.input}
                   placeholder="Ej: Fondo de emergencia, Inversiones, Viaje"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={T.textMicro}
                   value={nuevaCuentaNombre}
                   onChangeText={setNuevaCuentaNombre}
                   autoFocus
@@ -439,7 +440,7 @@ export default function Ahorros() {
                 </Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="0.00" placeholderTextColor="#9CA3AF"
+                  placeholder="0.00" placeholderTextColor={T.textMicro}
                   keyboardType="decimal-pad"
                   value={nuevaCuentaSaldo}
                   onChangeText={setNuevaCuentaSaldo}
@@ -479,7 +480,7 @@ export default function Ahorros() {
             <TextInput
               style={styles.input}
               placeholder="Ej: Fondo de emergencia"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={T.textMicro}
               value={editNombre}
               onChangeText={setEditNombre}
             />
@@ -489,7 +490,7 @@ export default function Ahorros() {
               <Text style={[styles.montoPrefix, { color: tab.accent }]}>{simbolo}</Text>
               <TextInput
                 style={styles.montoInput}
-                placeholder="0.00" placeholderTextColor="#9CA3AF"
+                placeholder="0.00" placeholderTextColor={T.textMicro}
                 keyboardType="decimal-pad"
                 value={editSaldo}
                 onChangeText={setEditSaldo}
@@ -526,7 +527,7 @@ export default function Ahorros() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  container: { flex: 1, backgroundColor: T.screen },
   header: {
     paddingHorizontal: 24,
     paddingTop: Platform.select({ ios: 0, android: 32, default: 24 }),
@@ -535,93 +536,93 @@ const styles = StyleSheet.create({
   back:  { fontSize: 15, fontWeight: '500', marginBottom: 8 },
   title: { fontSize: 22, fontWeight: '800' },
 
-  tabs: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  tabs: { flexDirection: 'row', backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
   tab:  { flex: 1, paddingVertical: 14, alignItems: 'center', borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 12, textAlign: 'center', color: '#9CA3AF' },
+  tabText: { fontSize: 12, textAlign: 'center', color: T.textMicro },
 
-  form: { padding: 24, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  form: { padding: 24, width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  hint:     { borderRadius: 10, padding: 12, marginBottom: 4 },
+  hint:     { borderRadius: R.control, padding: 12, marginBottom: 4 },
   hintText: { fontSize: 13, lineHeight: 19 },
-  error:    { backgroundColor: '#FEE2E2', color: '#DC2626', borderRadius: 10, padding: 12, marginBottom: 8, fontSize: 14, marginTop: 8 },
+  error:    { backgroundColor: T.redSoft, color: T.red, borderRadius: R.control, padding: 12, marginBottom: 8, fontSize: 14, marginTop: 8 },
 
   successBanner: {
-    borderRadius: 12, padding: 16, marginTop: 12, marginBottom: 4,
-    backgroundColor: '#F0FDFA', borderWidth: 1.5,
+    borderRadius: R.card, padding: 16, marginTop: 12, marginBottom: 4,
+    backgroundColor: T.greenSoft, borderWidth: 1.5,
   },
   successTitle: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  successSub:   { fontSize: 13, color: '#374151', marginBottom: 10 },
+  successSub:   { fontSize: 13, color: T.textSec, marginBottom: 10 },
   nuevoLink:    { fontSize: 13, fontWeight: '600' },
 
-  label:    { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8, marginTop: 20 },
-  optional: { fontWeight: '400', color: '#9CA3AF' },
+  label:    { fontSize: 13, fontWeight: '600', color: T.textSec, marginBottom: 8, marginTop: 20 },
+  optional: { fontWeight: '400', color: T.textMicro },
 
   selectorLoading: {
     flexDirection: 'row', alignItems: 'center', gap: 10, height: 52, paddingHorizontal: 16,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.control,
   },
-  selectorLoadingText: { fontSize: 15, color: '#9CA3AF' },
+  selectorLoadingText: { fontSize: 15, color: T.textMicro },
 
   selector: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, height: 52, minHeight: 52,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, height: 52, minHeight: 52,
   },
-  selectorText:        { fontSize: 15, color: '#111827' },
-  selectorSubtext:     { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  selectorPlaceholder: { fontSize: 15, color: '#9CA3AF' },
-  chevron:             { fontSize: 20, color: '#9CA3AF', flexShrink: 0 },
+  selectorText:        { fontSize: 15, color: T.textPrimary },
+  selectorSubtext:     { fontSize: 12, color: T.textMicro, marginTop: 2 },
+  selectorPlaceholder: { fontSize: 15, color: T.textMicro },
+  chevron:             { fontSize: 20, color: T.textMicro, flexShrink: 0 },
 
   editCuentaLink: { alignSelf: 'flex-end', marginTop: 6 },
   editCuentaText: { fontSize: 12, fontWeight: '600' },
 
   montoWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, height: 58,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, height: 58,
   },
   montoPrefix: { fontSize: 20, fontWeight: '700', marginRight: 8 },
-  montoInput:  { flex: 1, fontSize: 24, fontWeight: '700', color: '#111827', minWidth: 0 },
+  montoInput:  { flex: 1, fontSize: 24, fontWeight: '700', color: T.textPrimary, minWidth: 0 },
 
   input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, fontSize: 16, color: '#111827', height: 52,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, fontSize: 16, color: T.textPrimary, height: 52,
   },
   inputMulti: { height: 80, paddingTop: 14, paddingBottom: 14 },
 
   row: { flexDirection: 'row' },
 
-  btn:         { height: 54, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 32 },
+  btn:         { height: 54, borderRadius: R.card, justifyContent: 'center', alignItems: 'center', marginTop: 32 },
   btnDisabled: { opacity: 0.5 },
   btnText:     { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   btnSmall: {
-    flex: 1, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5,
+    flex: 1, height: 44, borderRadius: R.control, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5,
   },
 
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: T.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     maxHeight: '75%', paddingBottom: 24,
   },
   sheetHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
+  sheetTitle: { fontSize: 16, fontWeight: '600', color: T.textPrimary },
   closeBtn:   { fontSize: 15, fontWeight: '500' },
   option: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 14,
   },
-  optionText: { fontSize: 15, color: '#111827' },
+  optionText: { fontSize: 15, color: T.textPrimary },
   checkmark:  { fontSize: 18, fontWeight: '600' },
-  sep:        { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
-  emptyMsg:   { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+  sep:        { height: 1, backgroundColor: T.border, marginHorizontal: 20 },
+  emptyMsg:   { fontSize: 14, color: T.textSec, textAlign: 'center' },
 
-  nuevoForm: { borderTopWidth: 1, borderTopColor: '#F3F4F6', padding: 20 },
-  nuevoTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 12 },
+  nuevoForm: { borderTopWidth: 1, borderTopColor: T.border, padding: 20 },
+  nuevoTitle: { fontSize: 15, fontWeight: '700', color: T.textPrimary, marginBottom: 12 },
 
   // Edit cuenta modal
   editBackdrop: {
@@ -629,27 +630,27 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end', alignItems: 'center',
   },
   editSheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    width: '100%', maxWidth: 600, padding: 24, paddingBottom: 40,
+    backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    width: '100%', maxWidth: MAXW, padding: 24, paddingBottom: 40,
   },
-  editTitle:      { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 20 },
-  editError:      { color: '#DC2626', fontSize: 13, marginTop: 8, marginBottom: 4 },
+  editTitle:      { fontSize: 16, fontWeight: '700', color: T.textPrimary, marginBottom: 20 },
+  editError:      { color: T.red, fontSize: 13, marginTop: 8, marginBottom: 4 },
   editBtns:       { flexDirection: 'row', gap: 10, marginTop: 20 },
   editCancelBtn:  {
-    flex: 1, height: 48, backgroundColor: '#F3F4F6', borderRadius: 12,
+    flex: 1, height: 48, backgroundColor: T.screen, borderRadius: R.control,
     justifyContent: 'center', alignItems: 'center',
   },
-  editCancelText: { fontSize: 15, color: '#374151', fontWeight: '500' },
+  editCancelText: { fontSize: 15, color: T.textSec, fontWeight: '500' },
   editSaveBtn:    {
-    flex: 1, height: 48, borderRadius: 12,
+    flex: 1, height: 48, borderRadius: R.control,
     justifyContent: 'center', alignItems: 'center',
   },
   editSaveText:   { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   // Multi-moneda
   currRow:     { marginTop: 16, gap: 6 },
-  currToggle:  { flexDirection:'row', backgroundColor:'#F3F4F6', borderRadius:10, padding:3, alignSelf:'flex-start', gap:0 },
+  currToggle:  { flexDirection:'row', backgroundColor: T.screen, borderRadius:10, padding:3, alignSelf:'flex-start', gap:0 },
   currBtn:     { paddingHorizontal:14, paddingVertical:7, borderRadius:8 },
-  currBtnText: { fontSize:13, fontWeight:'600', color:'#6B7280' },
+  currBtnText: { fontSize:13, fontWeight:'600', color: T.textSec },
   convHint:    { fontSize:12, fontStyle:'italic' },
 });

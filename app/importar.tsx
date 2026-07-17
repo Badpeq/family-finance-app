@@ -10,6 +10,7 @@ import { parseVoucherText, parseTicketItems, type ParsedLine, type ParsedItem } 
 import { pickAndOcr, type OcrSource } from '@/lib/ocrImage';
 import { importStore } from '@/lib/importStore';
 import { DatePickerInput } from '@/components/DatePickerInput';
+import { T, R, MAXW } from '@/theme';
 
 const CATS = [
   'Alimentación','Transporte','Vivienda','Entretenimiento',
@@ -290,7 +291,7 @@ export default function Importar() {
 
             {ocring && (
               <View style={s.ocrOverlay}>
-                <ActivityIndicator color="#7C3AED" size="large" />
+                <ActivityIndicator color={T.accent} size="large" />
                 <Text style={s.ocrText}>Leyendo imagen con Google Vision...</Text>
               </View>
             )}
@@ -306,7 +307,7 @@ export default function Importar() {
               placeholder={mode === 'voucher'
                 ? 'COMPRA 10/06 METRO S/ 45.50\nCOMPRA 11/06 UBER 18.00\nCOMPRA 12/06 NETFLIX 45.00...'
                 : 'Leche Gloria 1L   x2   8.50\nPan Bimbo 500g   4.20\nAceite Primor 1L  9.90...'}
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={T.textMicro}
               value={texto}
               onChangeText={setTexto}
               textAlignVertical="top"
@@ -340,7 +341,7 @@ export default function Importar() {
                     </View>
                   </TouchableOpacity>
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[s.previewComercio, line.excluir && { color: '#9CA3AF' }]} numberOfLines={1}>
+                    <Text style={[s.previewComercio, line.excluir && { color: T.textMicro }]} numberOfLines={1}>
                       {line.comercio}
                     </Text>
                     <Text style={s.previewFecha}>{line.fecha}</Text>
@@ -349,7 +350,7 @@ export default function Importar() {
                       <Text style={s.catTagText}>{ICON[line.categoria] ?? '📦'} {line.categoria} ▾</Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={[s.previewMonto, line.excluir && { color: '#9CA3AF' }]}>
+                  <Text style={[s.previewMonto, line.excluir && { color: T.textMicro }]}>
                     {SYM[line.moneda] ?? line.moneda} {line.monto.toFixed(2)}
                   </Text>
                 </View>
@@ -381,7 +382,7 @@ export default function Importar() {
               <View style={s.ticketMeta}>
                 <Text style={s.label}>Comercio</Text>
                 <TextInput style={s.input} placeholder="Metro, Plaza Vea, Wong..."
-                  placeholderTextColor="#9CA3AF" value={ticketComercio}
+                  placeholderTextColor={T.textMicro} value={ticketComercio}
                   onChangeText={setTicketComercio} />
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
@@ -395,7 +396,7 @@ export default function Importar() {
                   <View style={{ flex: 1 }}>
                     <Text style={s.label}>Total (S/)</Text>
                     <TextInput style={s.input} placeholder="0.00"
-                      placeholderTextColor="#9CA3AF" keyboardType="decimal-pad"
+                      placeholderTextColor={T.textMicro} keyboardType="decimal-pad"
                       value={ticketTotal} onChangeText={setTicketTotal} />
                   </View>
                 </View>
@@ -431,7 +432,7 @@ export default function Importar() {
         {/* ── STAGE: saving ── */}
         {stage === 'saving' && (
           <View style={s.savingWrap}>
-            <ActivityIndicator size="large" color="#7C3AED" />
+            <ActivityIndicator size="large" color={T.accent} />
             <Text style={s.savingText}>Guardando transacciones...</Text>
           </View>
         )}
@@ -457,7 +458,7 @@ export default function Importar() {
                   }}>
                     <Text style={s.catOptText}>{ICON[cat] ?? '📦'} {cat}</Text>
                     {pickerIdx !== null && lines[pickerIdx]?.categoria === cat && (
-                      <Text style={{ color: '#7C3AED', fontSize: 18 }}>✓</Text>
+                      <Text style={{ color: T.accent, fontSize: 18 }}>✓</Text>
                     )}
                   </TouchableOpacity>
                   {i < CATS.length - 1 && <View style={s.sep} />}
@@ -472,108 +473,108 @@ export default function Importar() {
 }
 
 const s = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: '#F9FAFB' },
+  safe:    { flex: 1, backgroundColor: T.screen },
   header:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
              paddingTop: Platform.OS === 'android' ? 44 : 12, paddingBottom: 12,
-             borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: '#fff', gap: 12 },
+             borderBottomWidth: 1, borderBottomColor: T.border, backgroundColor: T.card, gap: 12 },
   backBtn: { paddingRight: 4 },
-  backArrow:   { fontSize: 16, color: '#374151', fontWeight: '500' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
+  backArrow:   { fontSize: 16, color: T.textSec, fontWeight: '500' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: T.textPrimary },
 
-  inner:   { padding: 20, paddingBottom: 40 },
-  label:   { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6, marginTop: 14 },
-  input:   { height: 48, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-             borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: '#111827' },
-  textArea:{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 14,
-             padding: 14, fontSize: 13, color: '#111827', minHeight: 180, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  errBox:  { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginTop: 10 },
-  errText: { color: '#DC2626', fontSize: 13 },
+  inner:   { padding: 20, paddingBottom: 40, width: '100%', maxWidth: MAXW, alignSelf: 'center' },
+  label:   { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 6, marginTop: 14 },
+  input:   { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+             borderRadius: R.control, paddingHorizontal: 14, fontSize: 15, color: T.textPrimary },
+  textArea:{ backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: R.card,
+             padding: 14, fontSize: 13, color: T.textPrimary, minHeight: 180, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  errBox:  { backgroundColor: T.redSoft, borderRadius: R.control, padding: 12, marginTop: 10 },
+  errText: { color: T.red, fontSize: 13 },
 
-  btn:     { backgroundColor: '#7C3AED', borderRadius: 12, height: 50,
+  btn:     { backgroundColor: T.accent, borderRadius: R.control, height: 50,
              justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   btnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   photoRow:   { flexDirection: 'row', gap: 10, marginTop: 4, marginBottom: 4 },
   photoBtn:   { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                gap: 6, backgroundColor: '#F3F4F6', borderRadius: 12, paddingVertical: 14,
-                borderWidth: 1.5, borderColor: '#E5E7EB' },
+                gap: 6, backgroundColor: T.screen, borderRadius: R.control, paddingVertical: 14,
+                borderWidth: 1.5, borderColor: T.inputBorder },
   photoIcon:  { fontSize: 20 },
-  photoBtnText:{ fontSize: 13, fontWeight: '600', color: '#374151' },
+  photoBtnText:{ fontSize: 13, fontWeight: '600', color: T.textSec },
   ocrOverlay: { alignItems: 'center', gap: 10, paddingVertical: 20 },
-  ocrText:    { fontSize: 13, color: '#7C3AED', fontWeight: '500' },
+  ocrText:    { fontSize: 13, color: T.accent, fontWeight: '500' },
   orRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 2 },
-  orLine:     { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
-  orText:     { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
+  orLine:     { flex: 1, height: 1, backgroundColor: T.inputBorder },
+  orText:     { fontSize: 11, color: T.textMicro, fontWeight: '500' },
 
   modeRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  modeBtn: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 14, padding: 14,
+  modeBtn: { flex: 1, backgroundColor: T.screen, borderRadius: R.card, padding: 14,
              alignItems: 'center', gap: 6, borderWidth: 2, borderColor: 'transparent' },
-  modeBtnOn:   { backgroundColor: '#EDE9FE', borderColor: '#7C3AED' },
+  modeBtnOn:   { backgroundColor: T.accentSoft, borderColor: T.accent },
   modeBtnIcon: { fontSize: 26 },
-  modeBtnText: { fontSize: 12, fontWeight: '600', color: '#6B7280', textAlign: 'center' },
-  modeBtnTextOn:{ color: '#5B21B6' },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: T.textSec, textAlign: 'center' },
+  modeBtnTextOn:{ color: T.accentDark },
 
-  infoBox:   { backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, marginBottom: 4,
-               borderLeftWidth: 3, borderLeftColor: '#22C55E' },
-  infoTitle: { fontSize: 13, fontWeight: '700', color: '#15803D', marginBottom: 4 },
-  infoText:  { fontSize: 12, color: '#166534', lineHeight: 19 },
+  infoBox:   { backgroundColor: T.greenSoft, borderRadius: R.control, padding: 14, marginBottom: 4,
+               borderLeftWidth: 3, borderLeftColor: T.green },
+  infoTitle: { fontSize: 13, fontWeight: '700', color: T.green, marginBottom: 4 },
+  infoText:  { fontSize: 12, color: T.green, lineHeight: 19 },
 
   // Preview
-  previewInfo:    { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  previewSub:     { fontSize: 12, color: '#6B7280' },
-  previewRow:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-                    borderRadius: 12, padding: 12, marginBottom: 6, gap: 10,
-                    shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
+  previewInfo:    { backgroundColor: T.card, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.border },
+  previewSub:     { fontSize: 12, color: T.textSec },
+  previewRow:     { flexDirection: 'row', alignItems: 'center', backgroundColor: T.card,
+                    borderRadius: R.control, padding: 12, marginBottom: 6, gap: 10,
+                    borderWidth: 1, borderColor: T.border },
   previewRowOff:  { opacity: 0.45 },
   previewCheck:   { padding: 4 },
-  check:          { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB',
+  check:          { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: T.inputBorder,
                     justifyContent: 'center', alignItems: 'center' },
-  checkOn:        { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  checkOn:        { backgroundColor: T.accent, borderColor: T.accent },
   checkMark:      { color: '#fff', fontSize: 12, fontWeight: '800' },
-  previewComercio:{ fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 2 },
-  previewFecha:   { fontSize: 11, color: '#9CA3AF', marginBottom: 4 },
-  previewMonto:   { fontSize: 14, fontWeight: '700', color: '#DC2626' },
-  catTag:         { backgroundColor: '#EDE9FE', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
-  catTagText:     { fontSize: 11, color: '#5B21B6', fontWeight: '600' },
+  previewComercio:{ fontSize: 14, fontWeight: '600', color: T.textPrimary, marginBottom: 2 },
+  previewFecha:   { fontSize: 11, color: T.textMicro, marginBottom: 4 },
+  previewMonto:   { fontSize: 14, fontWeight: '700', color: T.red },
+  catTag:         { backgroundColor: T.accentSoft, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  catTagText:     { fontSize: 11, color: T.accentDark, fontWeight: '600' },
 
   bottomBar:    { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12,
-                  backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#F3F4F6',
+                  backgroundColor: T.card, borderTopWidth: 1, borderTopColor: T.border,
                   paddingBottom: Platform.OS === 'ios' ? 32 : 16 },
-  bottomTotal:  { fontSize: 15, fontWeight: '700', color: '#111827' },
-  bottomCount:  { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  bottomTotal:  { fontSize: 15, fontWeight: '700', color: T.textPrimary },
+  bottomCount:  { fontSize: 11, color: T.textMicro, marginTop: 2 },
 
   // Ticket items
-  ticketMeta:   { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 12 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8,
+  ticketMeta:   { backgroundColor: T.card, borderRadius: R.card, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: T.border },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: T.textMicro, letterSpacing: 0.8,
                   textTransform: 'uppercase', marginBottom: 8, marginTop: 4 },
-  itemRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-                  borderRadius: 10, padding: 12, marginBottom: 6,
-                  shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 3, elevation: 1 },
-  itemName:     { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 2 },
-  itemQty:      { fontSize: 11, color: '#9CA3AF' },
-  itemTotal:    { fontSize: 14, fontWeight: '700', color: '#374151' },
+  itemRow:      { flexDirection: 'row', alignItems: 'center', backgroundColor: T.card,
+                  borderRadius: R.control, padding: 12, marginBottom: 6,
+                  borderWidth: 1, borderColor: T.border },
+  itemName:     { fontSize: 14, fontWeight: '600', color: T.textPrimary, marginBottom: 2 },
+  itemQty:      { fontSize: 11, color: T.textMicro },
+  itemTotal:    { fontSize: 14, fontWeight: '700', color: T.textSec },
 
   savingWrap:  { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  savingText:  { fontSize: 15, color: '#6B7280' },
+  savingText:  { fontSize: 15, color: T.textSec },
 
   doneWrap:    { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   doneIcon:    { fontSize: 56, marginBottom: 16 },
-  doneTitle:   { fontSize: 22, fontWeight: '800', color: '#111827', textAlign: 'center', marginBottom: 8 },
-  doneSub:     { fontSize: 15, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 32 },
-  doneBtn:     { backgroundColor: '#7C3AED', borderRadius: 14, height: 52, paddingHorizontal: 32,
+  doneTitle:   { fontSize: 22, fontWeight: '800', color: T.textPrimary, textAlign: 'center', marginBottom: 8 },
+  doneSub:     { fontSize: 15, color: T.textSec, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
+  doneBtn:     { backgroundColor: T.accent, borderRadius: R.card, height: 52, paddingHorizontal: 32,
                  justifyContent: 'center', alignItems: 'center', width: '100%' },
   doneBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   doneLink:    { marginTop: 16 },
-  doneLinkText:{ fontSize: 14, color: '#9CA3AF', textDecorationLine: 'underline' },
+  doneLinkText:{ fontSize: 14, color: T.textMicro, textDecorationLine: 'underline' },
 
   modalBg:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '65%' },
+  modalSheet: { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '65%' },
   modalHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  modalClose: { fontSize: 14, color: '#7C3AED', fontWeight: '500' },
+                paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: T.border },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: T.textPrimary },
+  modalClose: { fontSize: 14, color: T.accent, fontWeight: '500' },
   catOpt:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
                 paddingHorizontal: 20, paddingVertical: 14 },
-  catOptText: { fontSize: 15, color: '#111827' },
-  sep:        { height: 1, backgroundColor: '#F3F4F6' },
+  catOptText: { fontSize: 15, color: T.textPrimary },
+  sep:        { height: 1, backgroundColor: T.border },
 });

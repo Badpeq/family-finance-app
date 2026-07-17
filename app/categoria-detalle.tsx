@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { T, R, MAXW } from '@/theme';
 
 interface Tx {
   id: string;
@@ -77,7 +78,7 @@ export default function CategoriaDetalle() {
   };
   const total = txs.reduce((s, t) => s + toPEN(t), 0);
   const pct      = limite > 0 ? Math.min(total / limite, 1) : 0;
-  const pctColor = pct >= 0.9 ? '#DC2626' : pct >= 0.7 ? '#F59E0B' : '#22C55E';
+  const pctColor = pct >= 0.9 ? T.red : pct >= 0.7 ? T.amber : T.green;
   const remaining = Math.max(limite - total, 0);
 
   return (
@@ -112,7 +113,7 @@ export default function CategoriaDetalle() {
               <View style={s.summaryDivider} />
               <View style={s.summaryItem}>
                 <Text style={s.summaryLabel}>Disponible</Text>
-                <Text style={[s.summaryValue, { color: '#22C55E' }]}>
+                <Text style={[s.summaryValue, { color: T.green }]}>
                   {sym} {remaining.toFixed(2)}
                 </Text>
               </View>
@@ -134,7 +135,7 @@ export default function CategoriaDetalle() {
 
       {/* Lista */}
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color="#7C3AED" />
+        <ActivityIndicator style={{ marginTop: 40 }} color={T.accent} />
       ) : txs.length === 0 ? (
         <View style={s.empty}>
           <Text style={s.emptyIcon}>🎉</Text>
@@ -144,7 +145,7 @@ export default function CategoriaDetalle() {
         <FlatList
           data={txs}
           keyExtractor={t => t.id}
-          contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+          contentContainerStyle={[{ padding: 16, paddingBottom: 32 }, s.constrain]}
           ItemSeparatorComponent={() => <View style={s.sep} />}
           ListHeaderComponent={
             <Text style={s.listHeader}>{txs.length} gasto{txs.length !== 1 ? 's' : ''} este mes</Text>
@@ -170,35 +171,36 @@ export default function CategoriaDetalle() {
 }
 
 const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: '#F9FAFB' },
+  safe:      { flex: 1, backgroundColor: T.screen },
+  constrain: { width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  backBtn:{ paddingRight: 16, paddingVertical: 4 },
-  backArrow: { fontSize: 22, color: '#374151' },
+  header:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16, backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
+  backBtn:   { paddingRight: 16, paddingVertical: 4 },
+  backArrow: { fontSize: 22, color: T.textSec },
   headerIcon:  { fontSize: 28, marginBottom: 2 },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#111827' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: T.textPrimary },
 
-  summary:      { backgroundColor: '#fff', margin: 16, borderRadius: 16, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  summary:      { backgroundColor: T.card, margin: 16, borderRadius: R.card, padding: 16, borderWidth: 1, borderColor: T.border },
   summaryRow:   { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 14 },
   summaryItem:  { alignItems: 'center', flex: 1 },
-  summaryLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '500', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  summaryValue: { fontSize: 17, fontWeight: '700', color: '#111827' },
-  summaryDivider: { width: 1, backgroundColor: '#F3F4F6' },
+  summaryLabel: { fontSize: 11, color: T.textMicro, fontWeight: '500', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue: { fontSize: 17, fontWeight: '700', color: T.textPrimary },
+  summaryDivider: { width: 1, backgroundColor: T.border },
 
-  barBg:    { height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
+  barBg:    { height: 8, backgroundColor: T.border, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
   barFill:  { height: '100%', borderRadius: 4 },
   pctLabel: { fontSize: 11, textAlign: 'center', fontWeight: '600' },
 
-  listHeader: { fontSize: 12, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
+  listHeader: { fontSize: 12, fontWeight: '600', color: T.textMicro, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 },
 
-  txRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14 },
+  txRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, backgroundColor: T.card, borderRadius: R.control, paddingHorizontal: 14 },
   txLeft: { flex: 1, marginRight: 12 },
-  txDesc: { fontSize: 15, fontWeight: '500', color: '#111827', marginBottom: 3 },
-  txDate: { fontSize: 12, color: '#9CA3AF' },
-  txAmt:  { fontSize: 15, fontWeight: '700', color: '#DC2626' },
+  txDesc: { fontSize: 15, fontWeight: '500', color: T.textPrimary, marginBottom: 3 },
+  txDate: { fontSize: 12, color: T.textMicro },
+  txAmt:  { fontSize: 15, fontWeight: '700', color: T.red },
   sep:    { height: 6 },
 
   empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 60 },
   emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyText: { fontSize: 15, color: '#6B7280', textAlign: 'center' },
+  emptyText: { fontSize: 15, color: T.textSec, textAlign: 'center' },
 });

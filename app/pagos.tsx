@@ -6,6 +6,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { DatePickerInput } from '@/components/DatePickerInput';
+import { T, R, MAXW } from '@/theme';
 
 type PagoTipo = 'tarjeta' | 'prestamo';
 
@@ -219,7 +220,7 @@ export default function Pagos() {
           </View>
 
           {loadingData ? (
-            <ActivityIndicator color="#3B82F6" style={{ marginTop: 40 }} />
+            <ActivityIndicator color={T.accent} style={{ marginTop: 40 }} />
           ) : (
             <View style={styles.form}>
               {/* Tarjeta selector */}
@@ -274,7 +275,7 @@ export default function Pagos() {
                 style={styles.input}
                 keyboardType="decimal-pad"
                 placeholder="0.00"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={T.textMicro}
                 value={monto}
                 onChangeText={setMonto}
               />
@@ -290,7 +291,7 @@ export default function Pagos() {
               <TextInput
                 style={styles.input}
                 placeholder="Ej: Cuota 3, Pago mínimo…"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={T.textMicro}
                 value={descripcion}
                 onChangeText={setDescripcion}
               />
@@ -410,53 +411,53 @@ export default function Pagos() {
 const isWeb = Platform.OS === 'web';
 
 const styles = StyleSheet.create({
-  screen:  { flex: 1, backgroundColor: '#F3F4F6' },
+  screen:  { flex: 1, backgroundColor: T.screen },
   content: { flexGrow: 1, alignItems: 'center', paddingBottom: 40 },
-  wrapper: { width: '100%', maxWidth: 600, paddingHorizontal: 20 },
+  wrapper: { width: '100%', maxWidth: MAXW, paddingHorizontal: 20 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: isWeb ? 32 : 60, marginBottom: 24,
   },
-  backText: { fontSize: 16, color: '#3B82F6', fontWeight: '500' },
-  title:    { fontSize: 20, fontWeight: '700', color: '#111827' },
+  backText: { fontSize: 16, color: T.accent, fontWeight: '500' },
+  title:    { fontSize: 20, fontWeight: '700', color: T.textPrimary },
 
   toggle: {
-    flexDirection: 'row', backgroundColor: '#E5E7EB', borderRadius: 12,
+    flexDirection: 'row', backgroundColor: T.inputBorder, borderRadius: R.control,
     padding: 4, marginBottom: 28,
   },
   toggleOpt: {
     flex: 1, paddingVertical: 10, borderRadius: 9,
     justifyContent: 'center', alignItems: 'center',
   },
-  toggleActive:     { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
-  toggleText:       { fontSize: 14, fontWeight: '600', color: '#6B7280' },
-  toggleActiveText: { color: '#111827' },
+  toggleActive:     { backgroundColor: T.card, borderWidth: 1, borderColor: T.border },
+  toggleText:       { fontSize: 14, fontWeight: '600', color: T.textSec },
+  toggleActiveText: { color: T.textPrimary },
 
   form: {},
 
-  label: { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 },
+  label: { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 6 },
   input: {
-    height: 52, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, fontSize: 16, color: '#111827', marginBottom: 16,
+    height: 52, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, fontSize: 16, color: T.textPrimary, marginBottom: 16,
   },
   selector: {
-    height: 64, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 16, flexDirection: 'row',
+    height: 64, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: R.control, paddingHorizontal: 16, flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between', marginBottom: 16,
   },
-  selMain:        { fontSize: 15, fontWeight: '600', color: '#111827' },
-  selSub:         { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  selPlaceholder: { fontSize: 15, color: '#9CA3AF' },
-  chevron:        { fontSize: 22, color: '#9CA3AF', marginLeft: 8 },
+  selMain:        { fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  selSub:         { fontSize: 12, color: T.textSec, marginTop: 2 },
+  selPlaceholder: { fontSize: 15, color: T.textMicro },
+  chevron:        { fontSize: 22, color: T.textMicro, marginLeft: 8 },
 
-  errorText:    { color: '#DC2626', fontSize: 13, marginBottom: 12, backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10 },
-  successBanner: { backgroundColor: '#D1FAE5', borderRadius: 8, padding: 12, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  successText:  { color: '#059669', fontSize: 13, fontWeight: '600', flex: 1 },
-  nuevoLink:    { color: '#059669', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline', marginLeft: 8 },
+  errorText:    { color: T.red, fontSize: 13, marginBottom: 12, backgroundColor: T.redSoft, borderRadius: 8, padding: 10 },
+  successBanner: { backgroundColor: T.greenSoft, borderRadius: 8, padding: 12, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  successText:  { color: T.green, fontSize: 13, fontWeight: '600', flex: 1 },
+  nuevoLink:    { color: T.green, fontSize: 13, fontWeight: '700', textDecorationLine: 'underline', marginLeft: 8 },
 
   saveBtn: {
-    height: 52, backgroundColor: '#3B82F6', borderRadius: 12,
+    height: 52, backgroundColor: T.accent, borderRadius: R.control,
     justifyContent: 'center', alignItems: 'center', marginTop: 4,
   },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
@@ -468,24 +469,24 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end', alignItems: 'center',
   },
   sheet: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    width: '100%', maxWidth: 600, maxHeight: '70%', paddingBottom: 36,
+    backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    width: '100%', maxWidth: MAXW, maxHeight: '70%', paddingBottom: 36,
   },
   sheetHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+    borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  closeBtn:   { fontSize: 15, color: '#3B82F6', fontWeight: '500' },
-  emptyPicker: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', paddingVertical: 32 },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: T.textPrimary },
+  closeBtn:   { fontSize: 15, color: T.accent, fontWeight: '500' },
+  emptyPicker: { fontSize: 14, color: T.textMicro, textAlign: 'center', paddingVertical: 32 },
 
   pickerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 14,
   },
-  pickerMain: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  pickerSub:  { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  check:      { fontSize: 16, color: '#3B82F6', fontWeight: '700', marginLeft: 12, flexShrink: 0 },
-  sep:        { height: 1, backgroundColor: '#F3F4F6', marginHorizontal: 20 },
+  pickerMain: { fontSize: 15, fontWeight: '600', color: T.textPrimary },
+  pickerSub:  { fontSize: 12, color: T.textSec, marginTop: 2 },
+  check:      { fontSize: 16, color: T.accent, fontWeight: '700', marginLeft: 12, flexShrink: 0 },
+  sep:        { height: 1, backgroundColor: T.border, marginHorizontal: 20 },
 });
