@@ -4,9 +4,11 @@ import {
   ActivityIndicator, Modal, TextInput, ScrollView, Switch, Platform,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useCategorias, BASE_INCOME_CATS, iconForCat } from '@/hooks/useCategorias';
 import { DatePickerInput } from '@/components/DatePickerInput';
+import { T, MAXW } from '@/theme';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -203,13 +205,24 @@ export default function TransactionsList() {
     return true;
   });
 
-  type ListItem = { type: 'header'; dateStr: string } | { type: 'tx'; tx: Tx };
+  type ListItem =
+    | { type: 'header'; dateStr: string }
+    | { type: 'tx'; tx: Tx; first: boolean; last: boolean };
   const grouped: ListItem[] = [];
   let lastDay = '';
   for (const tx of filtered) {
     const day = tx.fecha ?? tx.creado_en.slice(0, 10);
     if (day !== lastDay) { grouped.push({ type: 'header', dateStr: day }); lastDay = day; }
-    grouped.push({ type: 'tx', tx });
+    grouped.push({ type: 'tx', tx, first: false, last: false });
+  }
+  // Marcar límites de cada grupo diario (para bordes redondeados del card agrupado)
+  for (let i = 0; i < grouped.length; i++) {
+    const it = grouped[i];
+    if (it.type !== 'tx') continue;
+    const prev = grouped[i - 1];
+    const next = grouped[i + 1];
+    it.first = !prev || prev.type === 'header';
+    it.last  = !next || next.type === 'header';
   }
 
   const mesOptions  = getMesOptions();
@@ -361,22 +374,33 @@ export default function TransactionsList() {
 
       {/* ── Filter bar ── */}
       <View style={s.filterBar}>
+        <View style={s.constrain}>
         <View style={s.filterBarRow}>
-          <TextInput
-            style={s.searchInput}
-            placeholder="🔍  Buscar por descripción o categoría…"
-            placeholderTextColor="#9CA3AF"
-            value={searchText}
-            onChangeText={setSearchText}
-            clearButtonMode="while-editing"
-          />
+          <View style={s.searchWrap}>
+            <Ionicons name="search" size={15} color={T.textMicro} style={{ marginRight: 7 }} />
+            <TextInput
+              style={s.searchInput}
+              placeholder="Buscar por descripción o categoría…"
+              placeholderTextColor={T.textMicro}
+              value={searchText}
+              onChangeText={setSearchText}
+              clearButtonMode="while-editing"
+            />
+          </View>
           <TouchableOpacity
             style={[s.filterToggle, showFilters && s.filterToggleOn]}
             onPress={() => setShowFilters(v => !v)}
           >
-            <Text style={[s.filterToggleText, showFilters && s.filterToggleTextOn]}>
-              ⚙{activeFilters > 0 ? ` ${activeFilters}` : ''}
-            </Text>
+            <Ionicons
+              name="options-outline"
+              size={17}
+              color={showFilters ? T.accent : T.textSec}
+            />
+            {activeFilters > 0 && (
+              <View style={s.filterCount}>
+                <Text style={s.filterCountText}>{activeFilters}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -441,8 +465,8 @@ export default function TransactionsList() {
                   setPage(0);
                   fetchTxs(0, true, { inactive: v });
                 }}
-                trackColor={{ false: '#E5E7EB', true: '#BFDBFE' }}
-                thumbColor={showInactive ? '#3B82F6' : '#9CA3AF'}
+                trackColor={{ false: T.inputBorder, true: T.accentSoft }}
+                thumbColor={showInactive ? T.accent : T.textMicro}
               />
             </View>
 
@@ -453,14 +477,16 @@ export default function TransactionsList() {
             )}
           </View>
         )}
+        </View>
       </View>
 
       {/* ── Quick month chips ── */}
+      <View style={s.chipBarWrap}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={s.chipBar}
-        style={s.chipBarWrap}
+        style={s.constrain}
       >
         {quickChips.map(chip => {
           const active = filterMes === chip.value;
@@ -487,6 +513,7 @@ export default function TransactionsList() {
           <Text style={s.qChipMoreText}>Más ›</Text>
         </TouchableOpacity>
       </ScrollView>
+      </View>
 
       {/* ── List ── */}
       {loading ? (
@@ -497,7 +524,7 @@ export default function TransactionsList() {
           keyExtractor={(item, i) =>
             item.type === 'header' ? `h-${item.dateStr}-${i}` : item.tx.id
           }
-          contentContainerStyle={s.list}
+          contentContainerStyle={[s.list, s.constrain]}
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={{ fontSize: 36, marginBottom: 10 }}>💸</Text>
@@ -538,52 +565,55 @@ export default function TransactionsList() {
             const isGasto = tx.tipo === 'gasto';
 
             return (
-              <View style={[s.txCard, !tx.activo && s.txInactive]}>
-                <View style={s.txIconBox}>
-                  <Text style={{ fontSize: 18 }}>{iconForCat(tx.categoria, catGasto)}</Text>
-                </View>
+              <View style={[s.txCard, item.first && s.txFirst, item.last && s.txLast]}>
+                {!item.first && <View style={s.txSep} />}
+                <View style={[s.txRow, !tx.activo && s.txInactive]}>
+                  <View style={s.txIconBox}>
+                    <Text style={{ fontSize: 17 }}>{iconForCat(tx.categoria, catGasto)}</Text>
+                  </View>
 
-                <View style={s.txBody}>
-                  <View style={s.txTitleRow}>
-                    <Text style={s.txDesc} numberOfLines={1}>
-                      {tx.descripcion || tx.categoria}
+                  <View style={s.txBody}>
+                    <View style={s.txTitleRow}>
+                      <Text style={s.txDesc} numberOfLines={1}>
+                        {tx.descripcion || tx.categoria}
+                      </Text>
+                      {tx.es_gasto_unico && (
+                        <View style={s.badge}>
+                          <Text style={s.badgeText}>⚡</Text>
+                        </View>
+                      )}
+                      {tx.gastos_recurrentes_id && (
+                        <View style={[s.badge, s.badgeRec]}>
+                          <Text style={s.badgeText}>🔄</Text>
+                        </View>
+                      )}
+                      {!tx.activo && (
+                        <View style={[s.badge, s.badgeOff]}>
+                          <Text style={[s.badgeText, { color: T.textMicro }]}>anulado</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={s.txMeta} numberOfLines={1}>
+                      {tx.categoria}
+                      {tx.moneda && tx.moneda !== 'PEN' ? ` · ${tx.moneda}` : ''}
+                      {tx.metodo_pago === 'tarjeta' ? ' · 💳' : ''}
                     </Text>
-                    {tx.es_gasto_unico && (
-                      <View style={s.badge}>
-                        <Text style={s.badgeText}>⚡</Text>
-                      </View>
-                    )}
-                    {tx.gastos_recurrentes_id && (
-                      <View style={[s.badge, s.badgeRec]}>
-                        <Text style={s.badgeText}>🔄</Text>
-                      </View>
-                    )}
-                    {!tx.activo && (
-                      <View style={[s.badge, s.badgeOff]}>
-                        <Text style={[s.badgeText, { color: '#9CA3AF' }]}>anulado</Text>
-                      </View>
+                  </View>
+
+                  <View style={s.txRight}>
+                    <Text style={[s.txAmt, isGasto ? s.red : s.green]}>
+                      {isGasto ? '−' : '+'}{fmtTx(tx, currency)}
+                    </Text>
+                    {tx.activo && (
+                      <TouchableOpacity
+                        style={s.menuBtn}
+                        onPress={() => setActionTx(tx)}
+                        hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                      >
+                        <Ionicons name="ellipsis-vertical" size={15} color={T.textMicro} />
+                      </TouchableOpacity>
                     )}
                   </View>
-                  <Text style={s.txMeta}>
-                    {tx.categoria}
-                    {tx.moneda && tx.moneda !== 'PEN' ? ` · ${tx.moneda}` : ''}
-                    {tx.metodo_pago === 'tarjeta' ? ' · 💳' : ''}
-                  </Text>
-                </View>
-
-                <View style={s.txRight}>
-                  <Text style={[s.txAmt, isGasto ? s.red : s.green]}>
-                    {isGasto ? '−' : '+'}{fmtTx(tx, currency)}
-                  </Text>
-                  {tx.activo && (
-                    <TouchableOpacity
-                      style={[s.iconBtn, s.iconBtnGray]}
-                      onPress={() => setActionTx(tx)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={s.iconBtnMenu}>···</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
               </View>
             );
@@ -1031,134 +1061,162 @@ export default function TransactionsList() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F3F4F6' },
+  root:      { flex: 1, backgroundColor: T.screen },
+  // Contenedor de ancho máximo: evita que la UI se estire en web/tablet
+  constrain: { width: '100%', maxWidth: MAXW, alignSelf: 'center' },
 
-  // Filter bar
-  filterBar:       { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10 },
-  filterBarRow:    { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  searchInput:     { flex: 1, height: 40, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, fontSize: 14, color: '#111827' },
-  filterToggle:    { height: 40, paddingHorizontal: 12, backgroundColor: '#F3F4F6', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  filterToggleOn:  { backgroundColor: '#EDE9FE' },
-  filterToggleText:{ fontSize: 14, color: '#6B7280', fontWeight: '600' },
-  filterToggleTextOn:{ color: '#7C3AED' },
-  filterPanel:     { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  filtLabel:       { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: 8 },
-  filtPicker:      { height: 42, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  filtPickerText:  { fontSize: 14, color: '#111827' },
-  filtPickerPlaceholder: { fontSize: 14, color: '#9CA3AF' },
-  filtChevron:     { fontSize: 18, color: '#9CA3AF' },
-  chipsRow:        { flexDirection: 'row', gap: 8 },
-  chip:            { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#F3F4F6', borderRadius: 20, borderWidth: 1, borderColor: 'transparent' },
-  chipOn:          { backgroundColor: '#EDE9FE', borderColor: '#7C3AED' },
-  chipText:        { fontSize: 13, color: '#6B7280', fontWeight: '500' },
-  chipTextOn:      { color: '#5B21B6', fontWeight: '700' },
-  switchFilt:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  resetBtn:        { marginTop: 12, alignItems: 'center', paddingVertical: 10, backgroundColor: '#FEF2F2', borderRadius: 10 },
-  resetText:       { fontSize: 13, color: '#DC2626', fontWeight: '600' },
+  // ── Barra de búsqueda + filtros
+  filterBar:    { backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border, paddingHorizontal: 16, paddingVertical: 10 },
+  filterBarRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  searchWrap:   {
+    flex: 1, height: 40, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: 12, paddingHorizontal: 12,
+  },
+  searchInput:  { flex: 1, height: '100%', fontSize: 14, color: T.textPrimary, paddingVertical: 0 },
+  filterToggle: {
+    height: 40, minWidth: 40, paddingHorizontal: 10, flexDirection: 'row', gap: 5,
+    backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: 12, justifyContent: 'center', alignItems: 'center',
+  },
+  filterToggleOn:  { backgroundColor: T.accentSoft, borderColor: T.accent },
+  // (legacy — ya no se usan tras migrar a Ionicons, se conservan por compatibilidad)
+  filterToggleText:   { fontSize: 14, color: T.textSec, fontWeight: '600' },
+  filterToggleTextOn: { color: T.accent },
+  filterCount:     {
+    minWidth: 17, height: 17, borderRadius: 9, backgroundColor: T.accent,
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
+  },
+  filterCountText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 
-  // Quick chip bar
-  chipBarWrap:  { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  chipBar:      { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: 'row' },
-  qChip:        { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#F3F4F6', borderRadius: 20, borderWidth: 1.5, borderColor: 'transparent' },
-  qChipOn:      { backgroundColor: '#EDE9FE', borderColor: '#7C3AED' },
-  qChipText:    { fontSize: 13, fontWeight: '600', color: '#6B7280' },
-  qChipTextOn:  { color: '#5B21B6' },
-  qChipMore:    { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#F9FAFB', borderRadius: 20 },
-  qChipMoreText:{ fontSize: 13, fontWeight: '500', color: '#3B82F6' },
+  filterPanel: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: T.border },
+  filtLabel:   { fontSize: 10, fontWeight: '600', color: T.textMicro, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 6, marginTop: 8 },
+  filtPicker:  {
+    height: 42, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder,
+    borderRadius: 12, paddingHorizontal: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  filtPickerText:        { fontSize: 14, color: T.textPrimary },
+  filtPickerPlaceholder: { fontSize: 14, color: T.textMicro },
+  filtChevron:           { fontSize: 18, color: T.textMicro },
+  chipsRow:    { flexDirection: 'row', gap: 8 },
+  chip:        { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: T.screen, borderRadius: 20, borderWidth: 1, borderColor: 'transparent' },
+  chipOn:      { backgroundColor: T.accentSoft, borderColor: T.accent },
+  chipText:    { fontSize: 13, color: T.textSec, fontWeight: '500' },
+  chipTextOn:  { color: T.accentDark, fontWeight: '700' },
+  switchFilt:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
+  resetBtn:    { marginTop: 12, alignItems: 'center', paddingVertical: 10, backgroundColor: T.redSoft, borderRadius: 12 },
+  resetText:   { fontSize: 13, color: T.red, fontWeight: '600' },
 
-  // List
-  list:     { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 32 },
-  dayHeader:{ fontSize: 10, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.8, paddingVertical: 8 },
+  // ── Barra de chips de mes
+  chipBarWrap:  { backgroundColor: T.card, borderBottomWidth: 1, borderBottomColor: T.border },
+  chipBar:      { paddingHorizontal: 16, paddingVertical: 10, gap: 8, flexDirection: 'row' },
+  qChip:        { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: T.screen, borderRadius: 20, borderWidth: 1.5, borderColor: 'transparent' },
+  qChipOn:      { backgroundColor: T.accentSoft, borderColor: T.accent },
+  qChipText:    { fontSize: 13, fontWeight: '600', color: T.textSec },
+  qChipTextOn:  { color: T.accentDark },
+  qChipMore:    { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: T.screen, borderRadius: 20 },
+  qChipMoreText:{ fontSize: 13, fontWeight: '600', color: T.accent },
 
-  // Transaction card
-  txCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 12, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  // ── Lista
+  list:      { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 32 },
+  dayHeader: {
+    fontSize: 10, fontWeight: '700', color: T.textMicro,
+    letterSpacing: 1, paddingTop: 14, paddingBottom: 8, paddingLeft: 4,
+  },
+
+  // ── Card agrupada por día (mismo lenguaje que el Dashboard: hairline, radio 18, sin sombras)
+  txCard:  { backgroundColor: T.card, borderLeftWidth: 1, borderRightWidth: 1, borderColor: T.border },
+  txFirst: { borderTopWidth: 1, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+  txLast:  { borderBottomWidth: 1, borderBottomLeftRadius: 18, borderBottomRightRadius: 18 },
+  txSep:   { height: 1, backgroundColor: T.border, marginLeft: 62 },
+  txRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13 },
   txInactive: { opacity: 0.45 },
-  txIconBox:  { width: 38, height: 38, borderRadius: 10, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', marginRight: 10, flexShrink: 0 },
+
+  txIconBox: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: T.screen,
+    justifyContent: 'center', alignItems: 'center', marginRight: 12, flexShrink: 0,
+  },
   txBody:     { flex: 1, minWidth: 0 },
-  txTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2, flexWrap: 'wrap' },
-  txDesc:     { fontSize: 14, fontWeight: '600', color: '#111827', flexShrink: 1 },
-  txMeta:     { fontSize: 11, color: '#9CA3AF' },
-  txRight:    { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
-  txAmt:      { fontSize: 14, fontWeight: '700', marginBottom: 4 },
-  txActions:  { flexDirection: 'row', gap: 4 },
-  green:      { color: '#059669' },
-  red:        { color: '#DC2626' },
+  txTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  txDesc:     { fontSize: 14, fontWeight: '600', color: T.textPrimary, flexShrink: 1 },
+  txMeta:     { fontSize: 11, color: T.textMicro },
+  txRight:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 8, flexShrink: 0 },
+  txAmt:      { fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
+  menuBtn:    { width: 28, height: 28, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  green:      { color: T.green },
+  red:        { color: T.red },
 
-  badge:      { borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1, backgroundColor: '#FEF9C3' },
-  badgeRec:   { backgroundColor: '#D1FAE5' },
-  badgeOff:   { backgroundColor: '#F3F4F6' },
-  badgeText:  { fontSize: 9, fontWeight: '700', color: '#92400E' },
+  badge:     { borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1, backgroundColor: T.amberSoft, flexShrink: 0 },
+  badgeRec:  { backgroundColor: T.greenSoft },
+  badgeOff:  { backgroundColor: T.screen },
+  badgeText: { fontSize: 9, fontWeight: '700', color: T.amber },
 
-  iconBtn:       { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  iconBtnText:   { fontSize: 12 },
-  iconBtnMenu:   { fontSize: 16, color: '#374151', fontWeight: '700', letterSpacing: 2, lineHeight: 20 },
-  iconBtnGray:   { backgroundColor: '#F3F4F6' },
-  iconBtnAmber:  { backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FCD34D' },
-  iconBtnBlue:   { backgroundColor: '#EFF6FF' },
-  iconBtnGreen:  { backgroundColor: '#D1FAE5' },
-  iconBtnRed:    { backgroundColor: '#FEF2F2' },
+  // (legacy — conservados por compatibilidad con vistas antiguas)
+  iconBtn:     { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  iconBtnMenu: { fontSize: 16, color: T.textSec, fontWeight: '700', letterSpacing: 2, lineHeight: 20 },
+  iconBtnGray: { backgroundColor: T.screen },
 
-  // Action sheet
-  actionSheet:     { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: Platform.OS === 'ios' ? 36 : 16, width: '100%', maxWidth: 600 },
-  actionPill:      { width: 36, height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
-  actionTitle:     { fontSize: 13, fontWeight: '600', color: '#6B7280', paddingHorizontal: 20, paddingVertical: 10 },
+  // ── Action sheet
+  actionSheet:     { backgroundColor: T.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: Platform.OS === 'ios' ? 36 : 16, width: '100%', maxWidth: MAXW },
+  actionPill:      { width: 36, height: 4, backgroundColor: T.inputBorder, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
+  actionTitle:     { fontSize: 13, fontWeight: '600', color: T.textSec, paddingHorizontal: 20, paddingVertical: 10 },
   actionOpt:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14 },
   actionOptIcon:   { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-  actionOptTitle:  { fontSize: 15, fontWeight: '500', color: '#111827' },
-  actionOptSub:    { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  actionCancel:    { margin: 14, marginTop: 8, backgroundColor: '#F3F4F6', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  actionCancelText:{ fontSize: 15, fontWeight: '600', color: '#374151' },
+  actionOptTitle:  { fontSize: 15, fontWeight: '500', color: T.textPrimary },
+  actionOptSub:    { fontSize: 12, color: T.textMicro, marginTop: 1 },
+  actionCancel:    { margin: 14, marginTop: 8, backgroundColor: T.screen, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  actionCancelText:{ fontSize: 15, fontWeight: '600', color: T.textSec },
 
-  // Load more
-  loadMoreBtn:  { alignItems: 'center', paddingVertical: 16, backgroundColor: '#fff', borderRadius: 12, marginTop: 4 },
-  loadMoreText: { fontSize: 14, color: '#7C3AED', fontWeight: '500' },
-
+  // ── Cargar más / vacío
+  loadMoreBtn:  { alignItems: 'center', paddingVertical: 15, backgroundColor: T.card, borderWidth: 1, borderColor: T.border, borderRadius: 18, marginTop: 10 },
+  loadMoreText: { fontSize: 14, color: T.accent, fontWeight: '600' },
   empty:      { alignItems: 'center', paddingTop: 48 },
-  emptyTitle: { fontSize: 15, fontWeight: '600', color: '#374151', marginBottom: 6 },
-  emptySub:   { fontSize: 13, color: '#9CA3AF', textAlign: 'center', lineHeight: 19, paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 15, fontWeight: '600', color: T.textPrimary, marginBottom: 6 },
+  emptySub:   { fontSize: 13, color: T.textMicro, textAlign: 'center', lineHeight: 19, paddingHorizontal: 32 },
 
-  // Edit modal
+  // ── Modal de edición
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end', alignItems: 'center' },
-  sheet:      { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, width: '100%', maxWidth: 600, maxHeight: '90%', paddingHorizontal: 24 },
+  sheet:      { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, width: '100%', maxWidth: MAXW, maxHeight: '90%', paddingHorizontal: 24 },
   sheetHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 20, paddingBottom: 16 },
-  sheetTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
-  closeBtn:   { fontSize: 18, color: '#9CA3AF', padding: 4 },
-  lbl:        { fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6 },
-  optional:   { fontWeight: '400', color: '#9CA3AF' },
-  inp:        { height: 48, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 14, fontSize: 15, color: '#111827', marginBottom: 14 },
-  pickerRow:  { height: 48, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  pickerText: { fontSize: 15, color: '#111827' },
-  placeholder:{ fontSize: 15, color: '#9CA3AF' },
-  chevron:    { fontSize: 20, color: '#9CA3AF' },
-  switchRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6', marginBottom: 4 },
-  switchLabel:{ fontSize: 15, fontWeight: '500', color: '#111827' },
-  switchSub:  { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: T.textPrimary },
+  closeBtn:   { fontSize: 18, color: T.textMicro, padding: 4 },
+  lbl:        { fontSize: 13, fontWeight: '500', color: T.textSec, marginBottom: 6 },
+  optional:   { fontWeight: '400', color: T.textMicro },
+  inp:        { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: 12, paddingHorizontal: 14, fontSize: 15, color: T.textPrimary, marginBottom: 14 },
+  pickerRow:  { height: 48, backgroundColor: T.input, borderWidth: 1, borderColor: T.inputBorder, borderRadius: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  pickerText: { fontSize: 15, color: T.textPrimary },
+  placeholder:{ fontSize: 15, color: T.textMicro },
+  chevron:    { fontSize: 20, color: T.textMicro },
+  switchRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: T.border, marginBottom: 4 },
+  switchLabel:{ fontSize: 15, fontWeight: '500', color: T.textPrimary },
+  switchSub:  { fontSize: 11, color: T.textMicro, marginTop: 2 },
   note:       { fontSize: 12, color: '#0891B2', marginBottom: 14, lineHeight: 17 },
-  errBox:     { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 12 },
-  errText:    { color: '#DC2626', fontSize: 13, lineHeight: 18 },
+  errBox:     { backgroundColor: T.redSoft, borderRadius: 12, padding: 12, marginBottom: 12 },
+  errText:    { color: T.red, fontSize: 13, lineHeight: 18 },
   rowBtns:    { flexDirection: 'row', gap: 10, marginTop: 4 },
-  cancelBtn:  { flex: 1, height: 48, backgroundColor: '#F3F4F6', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  cancelText: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  saveBtn:    { flex: 1, height: 48, backgroundColor: '#3B82F6', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  cancelBtn:  { flex: 1, height: 48, backgroundColor: T.screen, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  cancelText: { fontSize: 15, color: T.textSec, fontWeight: '500' },
+  saveBtn:    { flex: 1, height: 48, backgroundColor: T.accent, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   saveBtnText:{ fontSize: 15, color: '#fff', fontWeight: '600' },
   btnOff:     { opacity: 0.6 },
   optRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14 },
-  optText:    { fontSize: 15, color: '#374151' },
-  optSep:     { height: 1, backgroundColor: '#F3F4F6' },
-  catRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  catText:    { fontSize: 15, color: '#374151' },
-  checkMark:  { fontSize: 16, color: '#3B82F6', fontWeight: '600' },
+  optText:    { fontSize: 15, color: T.textPrimary },
+  optSep:     { height: 1, backgroundColor: T.border },
+  catRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.border },
+  catText:    { fontSize: 15, color: T.textPrimary },
+  checkMark:  { fontSize: 16, color: T.accent, fontWeight: '600' },
 
-  // Confirm dialogs
+  // ── Diálogos de confirmación
   confirmBg:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  confirmBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
-  confirmTitle:      { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 },
-  confirmSub:        { fontSize: 13, color: '#6B7280', lineHeight: 20, marginBottom: 20 },
+  confirmBox:        { backgroundColor: T.card, borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 },
+  confirmTitle:      { fontSize: 16, fontWeight: '700', color: T.textPrimary, marginBottom: 10 },
+  confirmSub:        { fontSize: 13, color: T.textSec, lineHeight: 20, marginBottom: 20 },
   confirmBtns:       { flexDirection: 'row', gap: 10 },
-  confirmCancel:     { flex: 1, height: 46, backgroundColor: '#F3F4F6', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  confirmCancelText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  confirmDanger:     { flex: 1, height: 46, backgroundColor: '#DC2626', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmCancel:     { flex: 1, height: 46, backgroundColor: T.screen, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmCancelText: { fontSize: 14, color: T.textSec, fontWeight: '500' },
+  confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  confirmSave:       { flex: 1, height: 46, backgroundColor: '#059669', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  confirmSave:       { flex: 1, height: 46, backgroundColor: T.green, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   confirmSaveText:   { fontSize: 14, color: '#fff', fontWeight: '600' },
 });
