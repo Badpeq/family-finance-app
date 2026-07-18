@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator,
-  Modal, FlatList, SafeAreaView, ScrollView,
+  Modal, FlatList, SafeAreaView, ScrollView, Switch,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useCategorias, BASE_INCOME_CATS } from '@/hooks/useCategorias';
+import { useHogar } from '@/hooks/useHogar';
 import { T, R, MAXW } from '@/theme';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -60,6 +61,11 @@ export default function Registrar() {
   const esIngreso = tipo === 'ingreso';
   const accent    = esIngreso ? T.green : T.red;
   const headerBg  = esIngreso ? T.greenSoft : T.redSoft;
+
+  // ── Modo hogar
+  const { membresia: miMembresia } = useHogar();
+  const tieneHogar = miMembresia?.estado === 'activo';
+  const [privado, setPrivado] = useState(false);
 
   // ── Categorías dinámicas desde DB
   const { categorias: catGasto } = useCategorias();
@@ -226,6 +232,7 @@ export default function Registrar() {
         tarjeta_id: gU.metodoPago === 'tarjeta' ? gU.tarjetaId : null,
         subcategoria_id: subcatId ?? null,
         moneda: txMoneda, tipo_cambio: txMoneda === 'USD' ? tcHoy : 1.0,
+        privado: tieneHogar ? privado : false,
       });
       dbError = e;
 
@@ -463,6 +470,20 @@ export default function Registrar() {
               placeholderTextColor={T.textMicro} value={gU.descripcion}
               onChangeText={v => setGU(s => ({ ...s, descripcion: v }))}
               multiline editable={!loading} textAlignVertical="top" />
+            {tieneHogar && (
+              <View style={styles.privadoRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.privadoLabel}>🔒 Privado</Text>
+                  <Text style={styles.privadoSub}>No visible para el resto del hogar</Text>
+                </View>
+                <Switch
+                  value={privado}
+                  onValueChange={setPrivado}
+                  trackColor={{ false: T.inputBorder, true: T.accentSoft }}
+                  thumbColor={privado ? T.accent : T.textMicro}
+                />
+              </View>
+            )}
           </>
         )}
 
@@ -868,4 +889,9 @@ const styles = StyleSheet.create({
   currencyBtn:    { paddingHorizontal:14, paddingVertical:7, borderRadius:8 },
   currencyBtnText:{ fontSize:13, fontWeight:'600', color:T.textSec },
   rateHint:       { fontSize:11, color:T.textMicro, fontStyle:'italic' },
+
+  // Privado (Modo Hogar)
+  privadoRow:   { flexDirection:'row', alignItems:'center', marginTop:14, padding:12, backgroundColor:T.input, borderRadius:R.control, borderWidth:1, borderColor:T.inputBorder },
+  privadoLabel: { fontSize:14, fontWeight:'600', color:T.textPrimary },
+  privadoSub:   { fontSize:12, color:T.textMicro, marginTop:2 },
 });

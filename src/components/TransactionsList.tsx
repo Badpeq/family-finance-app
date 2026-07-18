@@ -14,6 +14,7 @@ import { T, MAXW } from '@/theme';
 
 interface Tx {
   id: string;
+  user_id: string;
   tipo: 'ingreso' | 'gasto';
   monto: number;
   categoria: string;
@@ -29,6 +30,8 @@ interface Tx {
   es_gasto_unico: boolean | null;
   subcategoria_id: string | null;
   gastos_recurrentes_id: string | null;
+  auto_clasificado: boolean | null;
+  privado: boolean | null;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -39,6 +42,10 @@ const SYM: Record<string, string> = {
 };
 const CURRENCIES = ['PEN', 'USD', 'EUR', 'BRL', 'COP', 'MXN', 'ARS', 'CLP'];
 
+
+function normalizar(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/\p{Mn}/gu, '').replace(/\s+/g, ' ');
+}
 
 function getMesOptions() {
   const now = new Date();
@@ -74,7 +81,7 @@ function fmtTx(tx: Tx, fallbackCur: string) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function TransactionsList() {
+export default function TransactionsList({ vistaHogar = false }: { vistaHogar?: boolean }) {
   const now = new Date();
   const currentMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
@@ -163,11 +170,13 @@ export default function TransactionsList() {
 
     let q = supabase
       .from('transacciones')
-      .select('id,tipo,monto,categoria,descripcion,metodo_pago,tarjeta_id,prestamo_id,cuenta_ahorro_id,activo,creado_en,fecha,moneda,es_gasto_unico,subcategoria_id,gastos_recurrentes_id')
-      .eq('user_id', user.id)
+      .select('id,user_id,tipo,monto,categoria,descripcion,metodo_pago,tarjeta_id,prestamo_id,cuenta_ahorro_id,activo,creado_en,fecha,moneda,es_gasto_unico,subcategoria_id,gastos_recurrentes_id,auto_clasificado,privado')
       .order('fecha', { ascending: false })
       .order('creado_en', { ascending: false })
       .range(pageNum * PAGE, (pageNum + 1) * PAGE - 1);
+
+    // En vista hogar la RLS ya filtra; en vista personal filtramos explícitamente
+    if (!vistaHogar) q = q.eq('user_id', user.id);
 
     if (!inactive) q = q.eq('activo', true);
 
@@ -304,6 +313,18 @@ export default function TransactionsList() {
     };
     const { error } = await supabase.from('transacciones').update(updates).eq('id', editing.id);
     if (error) { setSaveError(`Error: ${error.message}`); setSaving(false); return; }
+
+    // Aprender regla si el usuario corrigió la categoría de una tx auto-clasificada
+    if (editing.auto_clasificado && editCat !== editing.categoria && editing.descripcion) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        supabase.from('reglas_categorizacion').upsert(
+          { user_id: user.id, comercio_normalizado: normalizar(editing.descripcion), categoria: editCat },
+          { onConflict: 'user_id,comercio_normalizado' },
+        ).then(() => {});
+      }
+    }
+
     const savedId = editing.id;
     setTxs(prev => prev.map(t => t.id === savedId ? { ...t, ...updates } as Tx : t));
     setEditing(null);
@@ -563,6 +584,8 @@ export default function TransactionsList() {
 
             const tx = item.tx;
             const isGasto = tx.tipo === 'gasto';
+            const esMia = tx.user_id === userId;
+            const puedeEditar = !vistaHogar || esMia;
 
             return (
               <View style={[s.txCard, item.first && s.txFirst, item.last && s.txLast]}>
@@ -577,6 +600,11 @@ export default function TransactionsList() {
                       <Text style={s.txDesc} numberOfLines={1}>
                         {tx.descripcion || tx.categoria}
                       </Text>
+                      {tx.auto_clasificado && (
+                        <View style={[s.badge, s.badgeAuto]}>
+                          <Text style={s.badgeText}>✨</Text>
+                        </View>
+                      )}
                       {tx.es_gasto_unico && (
                         <View style={s.badge}>
                           <Text style={s.badgeText}>⚡</Text>
@@ -585,6 +613,11 @@ export default function TransactionsList() {
                       {tx.gastos_recurrentes_id && (
                         <View style={[s.badge, s.badgeRec]}>
                           <Text style={s.badgeText}>🔄</Text>
+                        </View>
+                      )}
+                      {esMia && tx.privado && (
+                        <View style={[s.badge, s.badgePrivado]}>
+                          <Text style={s.badgeText}>🔒</Text>
                         </View>
                       )}
                       {!tx.activo && (
@@ -604,7 +637,7 @@ export default function TransactionsList() {
                     <Text style={[s.txAmt, isGasto ? s.red : s.green]}>
                       {isGasto ? '−' : '+'}{fmtTx(tx, currency)}
                     </Text>
-                    {tx.activo && (
+                    {tx.activo && puedeEditar && (
                       <TouchableOpacity
                         style={s.menuBtn}
                         onPress={() => setActionTx(tx)}
@@ -1148,8 +1181,10 @@ const s = StyleSheet.create({
   red:        { color: T.red },
 
   badge:     { borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1, backgroundColor: T.amberSoft, flexShrink: 0 },
-  badgeRec:  { backgroundColor: T.greenSoft },
-  badgeOff:  { backgroundColor: T.screen },
+  badgeAuto:    { backgroundColor: T.accentSoft },
+  badgeRec:     { backgroundColor: T.greenSoft },
+  badgeOff:     { backgroundColor: T.screen },
+  badgePrivado: { backgroundColor: T.amberSoft },
   badgeText: { fontSize: 9, fontWeight: '700', color: T.amber },
 
   // (legacy — conservados por compatibilidad con vistas antiguas)

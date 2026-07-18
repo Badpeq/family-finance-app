@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Platform, ActivityIndicator, Modal, StatusBar, SafeAreaView,
@@ -6,6 +6,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
+import { useHogar } from '@/hooks/useHogar';
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ interface Profile {
   presupuesto_template: Record<string, number> | null;
 }
 interface Transaccion {
-  id: string; tipo: 'ingreso' | 'gasto'; monto: number; categoria: string;
+  id: string; user_id: string; tipo: 'ingreso' | 'gasto'; monto: number; categoria: string;
   descripcion: string | null; metodo_pago: string | null; creado_en: string;
   moneda?: string; tipo_cambio?: number; es_gasto_unico?: boolean | null;
   gastos_recurrentes_id?: string | null;
@@ -58,85 +59,100 @@ export default function Dashboard() {
   const [showQuickAdd,       setShowQuickAdd]       = useState(false);
   const [showProyectadoInfo, setShowProyectadoInfo] = useState(false);
   const [pendingCommits,     setPendingCommits]     = useState<{ id: string; monto: number; descripcion: string | null }[]>([]);
+  const [vistaHogar,         setVistaHogar]         = useState(false);
+  const [userId,             setUserId]             = useState('');
 
-  const { rate } = useExchangeRate();
+  const { rate }      = useExchangeRate();
+  const { membresia, miembros } = useHogar();
+  const tieneHogar    = membresia?.estado === 'activo';
+  const vistaHogarRef = useRef(vistaHogar);
+  vistaHogarRef.current = vistaHogar;
+
+  const loadDashboard = useCallback(async (uid: string, hogarView: boolean) => {
+    setLoading(true);
+    const now          = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const periodoDate  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+    let txQ = supabase.from('transacciones')
+      .select('id,user_id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio,es_gasto_unico,gastos_recurrentes_id')
+      .eq('activo', true)
+      .gte('creado_en', startOfMonth)
+      .order('creado_en', { ascending: false }).limit(200);
+
+    if (!hogarView) txQ = txQ.eq('user_id', uid);
+
+    const [pRes, txRes, budRes, recRes] = await Promise.all([
+      supabase.from('profiles')
+        .select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template')
+        .eq('id', uid).single(),
+      txQ,
+      supabase.from('presupuestos')
+        .select('categoria,monto_limite')
+        .eq('user_id', uid).eq('periodo', periodoDate),
+      supabase.from('v_gastos_programados_mes')
+        .select('id,monto_cuota,descripcion,tipo_programado')
+        .eq('aplicado', false),
+    ]);
+
+    if (pRes.data)  setProfile(pRes.data as Profile);
+    if (txRes.data) setTxs(txRes.data as Transaccion[]);
+
+    const budData = budRes.data ?? [];
+    if (budData.length === 0 && pRes.data) {
+      const template = (pRes.data as any).presupuesto_template as Record<string, number> | null;
+      if (template && Object.keys(template).length > 0) {
+        const upserts = Object.entries(template).map(([cat, monto]) => ({
+          user_id: uid, categoria: cat, monto_limite: monto, periodo: periodoDate,
+        }));
+        const { data: created } = await supabase.from('presupuestos')
+          .upsert(upserts, { onConflict: 'user_id,categoria,periodo' })
+          .select('categoria,monto_limite');
+        if (created) setPresupuestos(created as Presupuesto[]);
+      } else {
+        setPresupuestos([]);
+      }
+    } else {
+      setPresupuestos(budData as Presupuesto[]);
+    }
+
+    if (recRes.data) {
+      setPendingCommits(
+        (recRes.data as any[]).map(r => ({
+          id: r.id, monto: Number(r.monto_cuota), descripcion: r.descripcion,
+        }))
+      );
+    }
+
+    const gpc: Record<string, number> = {};
+    (txRes.data ?? []).filter((t: Transaccion) => t.tipo === 'gasto').forEach((t: Transaccion) => {
+      const m   = Number(t.monto);
+      const mon = t.moneda ?? 'PEN';
+      const tc  = t.tipo_cambio ?? 1;
+      const pen = mon === 'USD' ? m * tc : m;
+      gpc[t.categoria] = (gpc[t.categoria] ?? 0) + pen;
+    });
+    setGastosPorCat(gpc);
+    setLoading(false);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
-        setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || !active) return;
-        const now          = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const periodoDate  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-
-        const [pRes, txRes, budRes, recRes] = await Promise.all([
-          supabase.from('profiles')
-            .select('nombre,moneda_base,modulo_ahorros,modulo_prestamos,modulo_tarjetas,presupuesto_template')
-            .eq('id', user.id).single(),
-          supabase.from('transacciones')
-            .select('id,tipo,monto,categoria,descripcion,metodo_pago,creado_en,moneda,tipo_cambio,es_gasto_unico,gastos_recurrentes_id')
-            .eq('user_id', user.id).eq('activo', true)
-            .gte('creado_en', startOfMonth)
-            .order('creado_en', { ascending: false }).limit(200),
-          supabase.from('presupuestos')
-            .select('categoria,monto_limite')
-            .eq('user_id', user.id).eq('periodo', periodoDate),
-          // Vista que ya calcula aplicado para recurrentes Y cuotas
-          supabase.from('v_gastos_programados_mes')
-            .select('id,monto_cuota,descripcion,tipo_programado')
-            .eq('aplicado', false),
-        ]);
-
-        if (!active) return;
-        if (pRes.data)  setProfile(pRes.data as Profile);
-        if (txRes.data) setTxs(txRes.data as Transaccion[]);
-
-        const budData = budRes.data ?? [];
-        if (budData.length === 0 && pRes.data) {
-          const template = (pRes.data as any).presupuesto_template as Record<string, number> | null;
-          if (template && Object.keys(template).length > 0) {
-            const upserts = Object.entries(template).map(([cat, monto]) => ({
-              user_id: user.id, categoria: cat, monto_limite: monto, periodo: periodoDate,
-            }));
-            const { data: created } = await supabase.from('presupuestos')
-              .upsert(upserts, { onConflict: 'user_id,categoria,periodo' })
-              .select('categoria,monto_limite');
-            if (active && created) setPresupuestos(created as Presupuesto[]);
-          } else {
-            setPresupuestos([]);
-          }
-        } else {
-          setPresupuestos(budData as Presupuesto[]);
-        }
-
-        // Compromisos pendientes = recurrentes + cuotas no aplicados este mes (vía vista)
-        if (active && recRes.data) {
-          setPendingCommits(
-            (recRes.data as any[]).map(r => ({
-              id:          r.id,
-              monto:       Number(r.monto_cuota),
-              descripcion: r.descripcion,
-            }))
-          );
-        }
-
-        const gpc: Record<string, number> = {};
-        (txRes.data ?? []).filter(t => t.tipo === 'gasto').forEach(t => {
-          const m   = Number(t.monto);
-          const mon = (t as any).moneda ?? 'PEN';
-          const tc  = (t as any).tipo_cambio ?? 1;
-          const pen = mon === 'USD' ? m * tc : m;
-          gpc[t.categoria] = (gpc[t.categoria] ?? 0) + pen;
-        });
-        setGastosPorCat(gpc);
-        setLoading(false);
+        setUserId(user.id);
+        await loadDashboard(user.id, vistaHogarRef.current);
       })();
       return () => { active = false; };
-    }, [])
+    }, [loadDashboard])
   );
+
+  const toggleVista = (hogar: boolean) => {
+    setVistaHogar(hogar);
+    if (userId) loadDashboard(userId, hogar);
+  };
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -207,6 +223,23 @@ export default function Dashboard() {
   const visibleCats = showAllCats ? sortedCats : sortedCats.slice(0, 3);
   const recent      = txs.slice(0, 3);
 
+  // Desglose por miembro (solo en vista hogar)
+  const desgloseMiembros = (() => {
+    if (!vistaHogar || !tieneHogar) return [];
+    const map: Record<string, { nombre: string; gastos: number; ingresos: number }> = {};
+    for (const tx of txs) {
+      const uid = tx.user_id;
+      if (!map[uid]) {
+        const perfil = miembros.find(m => m.id === uid);
+        map[uid] = { nombre: perfil?.nombre ?? 'Miembro', gastos: 0, ingresos: 0 };
+      }
+      const pen = toPENAmount(tx);
+      if (tx.tipo === 'gasto') map[uid].gastos += pen;
+      else map[uid].ingresos += pen;
+    }
+    return Object.entries(map).map(([, v]) => v).sort((a, b) => b.gastos - a.gastos);
+  })();
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -238,6 +271,26 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+
+        {/* ── Selector Mi vista / Hogar (solo si hay hogar activo) ── */}
+        {tieneHogar && (
+          <View style={s.selectorWrap}>
+            <View style={s.selectorTrack}>
+              <TouchableOpacity
+                style={[s.selectorBtn, !vistaHogar && s.selectorBtnOn]}
+                onPress={() => toggleVista(false)}
+              >
+                <Text style={[s.selectorText, !vistaHogar && s.selectorTextOn]}>Mi vista</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.selectorBtn, vistaHogar && s.selectorBtnOn]}
+                onPress={() => toggleVista(true)}
+              >
+                <Text style={[s.selectorText, vistaHogar && s.selectorTextOn]}>🏠 Hogar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         <View style={s.container}>
 
@@ -453,7 +506,37 @@ export default function Dashboard() {
             </View>
           )}
 
-          {/* ════ ZONA 3b — ÚLTIMOS 3 MOVIMIENTOS ════ */}
+          {/* ════ ZONA 3b — DESGLOSE POR MIEMBRO (solo vista hogar) ════ */}
+          {vistaHogar && tieneHogar && desgloseMiembros.length > 0 && (
+            <View style={s.section}>
+              <View style={s.sectionHead}>
+                <Text style={s.sectionTitle}>Por miembro este mes</Text>
+              </View>
+              <View style={s.catCard}>
+                {desgloseMiembros.map((m, i) => (
+                  <View key={m.nombre}>
+                    <View style={s.miembroRow}>
+                      <View style={s.miembroAvatar}>
+                        <Text style={s.miembroAvatarText}>{m.nombre.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <View style={s.miembroBody}>
+                        <Text style={s.miembroNombre}>{m.nombre}</Text>
+                        {m.ingresos > 0 && (
+                          <Text style={s.miembroIng}>↑ {fmt(m.ingresos, currency)}</Text>
+                        )}
+                      </View>
+                      <Text style={[s.miembroGasto, { color: HERO_RED }]}>
+                        −{fmt(m.gastos, currency)}
+                      </Text>
+                    </View>
+                    {i < desgloseMiembros.length - 1 && <View style={s.catSep} />}
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* ════ ZONA 3c — ÚLTIMOS 3 MOVIMIENTOS ════ */}
           <View style={s.section}>
             <View style={s.sectionHead}>
               <Text style={s.sectionTitle}>Últimos movimientos</Text>
@@ -737,4 +820,26 @@ const s = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   sheetCancelText: { fontSize: 14, fontWeight: '600', color: T.textSec },
+
+  // ── Selector Mi vista / Hogar
+  selectorWrap:    { paddingHorizontal: 16, paddingBottom: 8, alignItems: 'center' },
+  selectorTrack:   {
+    flexDirection: 'row', backgroundColor: T.card,
+    borderRadius: 12, padding: 3, gap: 2,
+    borderWidth: 1, borderColor: T.border,
+    width: '100%', maxWidth: MAXW,
+  },
+  selectorBtn:     { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: 'center' },
+  selectorBtnOn:   { backgroundColor: T.accent },
+  selectorText:    { fontSize: 13, fontWeight: '600', color: T.textSec },
+  selectorTextOn:  { color: '#fff' },
+
+  // ── Desglose por miembro
+  miembroRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  miembroAvatar:     { width: 34, height: 34, borderRadius: 17, backgroundColor: T.accentSoft, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  miembroAvatarText: { fontSize: 14, fontWeight: '700', color: T.accent },
+  miembroBody:       { flex: 1 },
+  miembroNombre:     { fontSize: 14, fontWeight: '600', color: T.textPrimary },
+  miembroIng:        { fontSize: 11, color: HERO_GREEN, marginTop: 1 },
+  miembroGasto:      { fontSize: 13, fontWeight: '700' },
 });

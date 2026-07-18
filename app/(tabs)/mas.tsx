@@ -5,8 +5,13 @@ import {
   Modal, TextInput, Switch,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as SecureStore from 'expo-secure-store';
 import { supabase } from '@/lib/supabase';
+import { useHogar } from '@/hooks/useHogar';
 import { T, R, MAXW } from '@/theme';
+
+const BIOMETRIC_KEY = 'biometric_lock';
 
 interface Profile {
   id: string;
@@ -30,6 +35,7 @@ const MONEDAS = [
 ];
 
 export default function Mas() {
+  const { pendientes: pendientesHogar, esAdmin: esAdminHogar } = useHogar();
   const [profile,            setProfile]            = useState<Profile | null>(null);
   const [loading,            setLoading]            = useState(true);
   const [showMonedas,        setShowMonedas]        = useState(false);
@@ -42,6 +48,10 @@ export default function Mas() {
   const [savingTarjetas,     setSavingTarjetas]     = useState(false);
   const [loggingOut,         setLoggingOut]         = useState(false);
   const [showLogoutConfirm,  setShowLogoutConfirm]  = useState(false);
+
+  // Biometría
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled,   setBiometricEnabled]   = useState(true);
 
   // Cambio de contraseña
   const [showChangePass,     setShowChangePass]     = useState(false);
@@ -69,6 +79,12 @@ export default function Mas() {
             modulo_tarjetas: (data as any).modulo_tarjetas ?? true,
             email: user.email ?? '',
           });
+        }
+        if (active && Platform.OS !== 'web') {
+          const enrolled = await LocalAuthentication.isEnrolledAsync();
+          setBiometricAvailable(enrolled);
+          const stored = await SecureStore.getItemAsync(BIOMETRIC_KEY);
+          setBiometricEnabled(stored !== 'false');
         }
         setLoading(false);
       })();
@@ -197,6 +213,28 @@ export default function Mas() {
             </View>
             <Text style={s.rowChevron}>›</Text>
           </TouchableOpacity>
+
+          {biometricAvailable && (
+            <>
+              <View style={s.sep} />
+              <View style={s.row}>
+                <Text style={s.rowIcon}>👆</Text>
+                <View style={s.rowBody}>
+                  <Text style={s.rowTitle}>Bloqueo biométrico</Text>
+                  <Text style={s.rowSub}>{biometricEnabled ? 'Activo — huella o Face ID al volver' : 'Inactivo'}</Text>
+                </View>
+                <Switch
+                  value={biometricEnabled}
+                  onValueChange={async (val) => {
+                    setBiometricEnabled(val);
+                    await SecureStore.setItemAsync(BIOMETRIC_KEY, val ? 'true' : 'false');
+                  }}
+                  trackColor={{ false: T.inputBorder, true: T.accentSoft }}
+                  thumbColor={biometricEnabled ? T.accent : T.textMicro}
+                />
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── Módulos activables ── */}
@@ -275,6 +313,24 @@ export default function Mas() {
               {i < arr.length - 1 && <View style={s.sep} />}
             </View>
           ))}
+        </View>
+
+        {/* ── Familia ── */}
+        <SLabel>FAMILIA</SLabel>
+        <View style={s.group}>
+          <TouchableOpacity style={s.row} onPress={() => router.push('/hogar')}>
+            <Text style={s.rowIcon}>🏠</Text>
+            <View style={s.rowBody}>
+              <Text style={s.rowTitle}>Mi Hogar</Text>
+              <Text style={s.rowSub}>Compartir finanzas con tu familia</Text>
+            </View>
+            {esAdminHogar && pendientesHogar > 0 && (
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{pendientesHogar}</Text>
+              </View>
+            )}
+            <Text style={s.rowChevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Sesión ── */}
@@ -467,4 +523,7 @@ const s = StyleSheet.create({
   confirmCancelText: { fontSize: 15, color: T.textSec, fontWeight: '500' },
   confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 15, color: '#fff', fontWeight: '600' },
+
+  badge:     { backgroundColor: T.red, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5, marginRight: 6 },
+  badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 });
