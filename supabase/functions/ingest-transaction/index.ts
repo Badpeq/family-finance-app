@@ -4,24 +4,12 @@
  *
  * Flujo:
  *   Make/n8n/MacroDroid → POST /ingest-transaction → esta función:
- *     1. Valida el API token (Bearer en el header Authorization)
- *     2. Identifica al usuario via la tabla ingest_tokens
+ *     1. Hashea el Bearer token (SHA-256) y valida contra ingest_tokens.token_hash
+ *     2. Verifica que el token esté activo y no expirado
  *     3. Parsea el texto con Claude Haiku → { monto, moneda, comercio, ultimos_4 }
  *     4. Busca la tarjeta de crédito/débito por ultimos_4_digitos (si aplica)
  *     5. Inserta en transacciones con estado='PENDIENTE_REVISION'
  *     6. Si algo falla: guarda en log_errores_ingesta (no se pierde nada)
- *
- * Deploy:
- *   supabase functions deploy ingest-transaction --no-verify-jwt
- *
- * Variables de entorno (Supabase Dashboard → Edge Functions → Secrets):
- *   ANTHROPIC_API_KEY         API key de Anthropic para Claude Haiku
- *   SUPABASE_URL              URL del proyecto (disponible automáticamente)
- *   SUPABASE_SERVICE_ROLE_KEY Service role key para bypass de RLS
- *
- * Autenticación de clientes:
- *   El token NO va en los secrets de la función — vive en la tabla ingest_tokens.
- *   Cada dispositivo/servicio tiene su propio token generado desde la app.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -35,18 +23,23 @@ interface IngestPayload {
   raw_text: string;
 }
 
+async function sha256hex(text: string): Promise<string> {
+  const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return json({ error: 'Method Not Allowed' }, 405);
   }
 
-  // ── 1. Extraer y validar el Bearer token ────────────────────────────────
+  // ── 1. Extraer Bearer y calcular hash ───────────────────────────────────
   const authHeader = req.headers.get('authorization') ?? '';
-  const token      = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+  const raw        = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
 
-  if (!token) {
-    return json({ error: 'Missing Authorization header' }, 401);
-  }
+  if (!raw) return json({ error: 'Missing Authorization header' }, 401);
+
+  const tokenHash = await sha256hex(raw);
 
   // ── 2. Leer y validar el body ────────────────────────────────────────────
   let payload: IngestPayload;
@@ -68,21 +61,26 @@ Deno.serve(async (req: Request) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // ── 3. Lookup del token → user_id ────────────────────────────────────────
+  // ── 3. Lookup por token_hash → user_id ──────────────────────────────────
   const { data: tokenRow, error: tokenErr } = await supabase
     .from('ingest_tokens')
-    .select('user_id, activo')
-    .eq('token', token)
+    .select('user_id, activo, expira_en')
+    .eq('token_hash', tokenHash)
     .single();
 
   if (tokenErr || !tokenRow) {
-    await logError(supabase, token, source, raw_text, 'AUTH_FAILED', 'Token no encontrado', null);
+    await logError(supabase, tokenHash, source, raw_text, 'AUTH_FAILED', 'Token no encontrado', null);
     return json({ error: 'Unauthorized' }, 401);
   }
 
   if (!tokenRow.activo) {
-    await logError(supabase, token, source, raw_text, 'AUTH_FAILED', 'Token revocado', null);
-    return json({ error: 'Token revocado' }, 401);
+    await logError(supabase, tokenHash, source, raw_text, 'AUTH_FAILED', 'Token revocado', null);
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
+  if (tokenRow.expira_en && new Date(tokenRow.expira_en) < new Date()) {
+    await logError(supabase, tokenHash, source, raw_text, 'AUTH_FAILED', 'Token expirado', null);
+    return json({ error: 'Unauthorized' }, 401);
   }
 
   const userId = tokenRow.user_id as string;
@@ -91,7 +89,7 @@ Deno.serve(async (req: Request) => {
   supabase
     .from('ingest_tokens')
     .update({ ultimo_uso: new Date().toISOString() })
-    .eq('token', token)
+    .eq('token_hash', tokenHash)
     .then(() => {});
 
   // ── 4. Parsear texto con Claude Haiku ────────────────────────────────────
@@ -101,13 +99,12 @@ Deno.serve(async (req: Request) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('Error llamando a Anthropic:', msg);
-    await logError(supabase, token, source, raw_text, 'PARSE_FAILED', msg, null);
-    // 200 OK para que Make/n8n no reintente infinitamente — el error está en el log
+    await logError(supabase, tokenHash, source, raw_text, 'PARSE_FAILED', msg, null);
     return json({ ok: false, error: 'Error de parsing — guardado en log', logged: true }, 200);
   }
 
   if (!parsed) {
-    await logError(supabase, token, source, raw_text, 'NO_MONTO', 'IA no pudo extraer monto válido', null);
+    await logError(supabase, tokenHash, source, raw_text, 'NO_MONTO', 'IA no pudo extraer monto válido', null);
     return json({ ok: false, error: 'No se pudo identificar el monto — guardado en log', logged: true }, 200);
   }
 
@@ -156,15 +153,7 @@ Deno.serve(async (req: Request) => {
 
   if (insertErr) {
     console.error('Error insertando transacción:', insertErr);
-    await logError(
-      supabase,
-      token,
-      source,
-      raw_text,
-      'INSERT_FAILED',
-      insertErr.message,
-      parsed as unknown as Record<string, unknown>,
-    );
+    await logError(supabase, tokenHash, source, raw_text, 'INSERT_FAILED', insertErr.message, parsed as unknown as Record<string, unknown>);
     return json({ ok: false, error: 'Error al guardar — guardado en log', logged: true }, 200);
   }
 
@@ -180,8 +169,6 @@ Deno.serve(async (req: Request) => {
     estado:     'PENDIENTE_REVISION',
   }, 200);
 });
-
-// ── Utilidades ─────────────────────────────────────────────────────────────
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
