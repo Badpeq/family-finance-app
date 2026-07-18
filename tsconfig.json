@@ -5,5 +5,10 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "exclude": [
+    "supabase/functions/**",
+    "api/**",
+    "__tests__/**"
+  ]
 }

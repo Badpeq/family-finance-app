@@ -1,13 +1,10 @@
 import * as ImagePicker from 'expo-image-picker';
 import { Platform } from 'react-native';
-
-// Absolute URL so it works from native devices too
-const OCR_ENDPOINT = 'https://family-finance-app-ruby.vercel.app/api/ocr';
+import { supabase } from '@/lib/supabase';
 
 export type OcrSource = 'camera' | 'gallery';
 
 export async function pickAndOcr(source: OcrSource): Promise<string> {
-  // Request permissions on native
   if (Platform.OS !== 'web') {
     if (source === 'camera') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -31,29 +28,15 @@ export async function pickAndOcr(source: OcrSource): Promise<string> {
 
   if (result.canceled) throw new Error('cancelled');
 
-  const asset = result.assets[0];
-  const base64 = asset.base64;
-
+  const base64 = result.assets[0].base64;
   if (!base64) throw new Error('No se pudo leer la imagen.');
 
-  // Vercel serverless limit is 4.5 MB; base64 adds ~33% overhead
-  const estimatedBytes = Math.ceil(base64.length * 0.75);
-  if (estimatedBytes > 3_500_000) {
-    throw new Error('La foto es demasiado grande. Intenta con una foto más cercana al ticket.');
-  }
-
-  const res = await fetch(OCR_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: base64 }),
+  const { data, error } = await supabase.functions.invoke('ocr-ticket', {
+    body: { image_base64: base64 },
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
-    if (res.status === 413) throw new Error('La foto es demasiado grande para procesar. Acércate más al ticket.');
-    throw new Error(err.error ?? `Error OCR (${res.status})`);
-  }
+  if (error) throw new Error(error.message ?? 'Error OCR');
 
-  const { text } = await res.json() as { text: string };
+  const { text } = data as { text: string };
   return text;
 }
