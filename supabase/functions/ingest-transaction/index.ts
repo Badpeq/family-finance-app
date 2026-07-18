@@ -92,6 +92,16 @@ Deno.serve(async (req: Request) => {
     .eq('token_hash', tokenHash)
     .then(() => {});
 
+  // ── 3b. Rate limiting — 30 req/hora por token ───────────────────────────
+  const { data: allowed } = await supabase.rpc('fn_check_rate_limit', {
+    p_clave:   `ingest:${tokenHash}`,
+    p_max:     30,
+    p_ventana: '1 hour',
+  });
+  if (!allowed) {
+    return json({ error: 'Too Many Requests' }, 429);
+  }
+
   // ── 4. Parsear texto con Claude Haiku ────────────────────────────────────
   let parsed: Awaited<ReturnType<typeof parseTransactionText>>;
   try {

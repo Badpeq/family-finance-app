@@ -116,6 +116,21 @@ Deno.serve(async (req: Request) => {
     return new Response('OK', { status: 200 });
   }
 
+  // 3b. Rate limiting — 60 req/hora por número WhatsApp
+  // Meta requiere respuesta 200 para no reintentar, así que avisamos al usuario y salimos
+  const { data: allowed } = await supabase.rpc('fn_check_rate_limit', {
+    p_clave:   `wa:${msg.from}`,
+    p_max:     60,
+    p_ventana: '1 hour',
+  });
+  if (!allowed) {
+    await sendWhatsAppReply(
+      msg.from,
+      '⏱️ Demasiados mensajes en poco tiempo. Espera unos minutos antes de enviar otro comprobante.',
+    );
+    return new Response('OK', { status: 200 });
+  }
+
   // 4. Descargar imagen
   let media: Awaited<ReturnType<typeof downloadMedia>>;
   try {
