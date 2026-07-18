@@ -2,14 +2,13 @@
  * Supabase Edge Function: ingest-transaction
  * Endpoint de ingesta automática de gastos desde correos bancarios y notificaciones push.
  *
- * Flujo:
- *   Make/n8n/MacroDroid → POST /ingest-transaction → esta función:
- *     1. Hashea el Bearer token (SHA-256) y valida contra ingest_tokens.token_hash
- *     2. Verifica que el token esté activo y no expirado
- *     3. Parsea el texto con Claude Haiku → { monto, moneda, comercio, ultimos_4 }
- *     4. Busca la tarjeta de crédito/débito por ultimos_4_digitos (si aplica)
- *     5. Inserta en transacciones con estado='PENDIENTE_REVISION'
- *     6. Si algo falla: guarda en log_errores_ingesta (no se pierde nada)
+ * Semántica de respuestas (paso 1.6):
+ *   401 — AUTH_FAILED (token no encontrado, revocado o expirado)
+ *   429 — Rate limit excedido (sin llamar a Claude)
+ *   400 — Body inválido (JSON malformado, campos faltantes)
+ *   200 { ok:true }  — Transacción ingresada
+ *   200 { ok:true,  duplicado:true } — Correo ya procesado (dedup por ingest_hash)
+ *   200 { ok:false, logged:true }   — Error de parsing — guardado en log
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -24,7 +23,7 @@ interface IngestPayload {
 }
 
 async function sha256hex(text: string): Promise<string> {
-  const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -33,15 +32,43 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Method Not Allowed' }, 405);
   }
 
-  // ── 1. Extraer Bearer y calcular hash ───────────────────────────────────
+  // ── 1. Auth PRIMERO — antes de leer el body ──────────────────────────────
   const authHeader = req.headers.get('authorization') ?? '';
   const raw        = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
-
-  if (!raw) return json({ error: 'Missing Authorization header' }, 401);
+  if (!raw) return json({ error: 'Unauthorized' }, 401);
 
   const tokenHash = await sha256hex(raw);
+  const supabase  = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // ── 2. Leer y validar el body ────────────────────────────────────────────
+  const { data: tokenRow } = await supabase
+    .from('ingest_tokens')
+    .select('user_id, activo, expira_en')
+    .eq('token_hash', tokenHash)
+    .single();
+
+  if (!tokenRow?.activo) return json({ error: 'Unauthorized' }, 401);
+  if (tokenRow.expira_en && new Date(tokenRow.expira_en) < new Date()) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
+  const userId = tokenRow.user_id as string;
+
+  // ── 2. Rate limiting — antes de leer el body ────────────────────────────
+  const { data: allowed } = await supabase.rpc('fn_check_rate_limit', {
+    p_clave:   `ingest:${tokenHash}`,
+    p_max:     30,
+    p_ventana: '1 hour',
+  });
+  if (!allowed) return json({ error: 'Too Many Requests' }, 429);
+
+  // Actualizar ultimo_uso (fire & forget — no bloquea el flujo)
+  supabase
+    .from('ingest_tokens')
+    .update({ ultimo_uso: new Date().toISOString() })
+    .eq('token_hash', tokenHash)
+    .then(() => {});
+
+  // ── 3. Leer y validar body (solo si el caller es legítimo) ───────────────
   let payload: IngestPayload;
   try {
     payload = await req.json();
@@ -54,55 +81,12 @@ Deno.serve(async (req: Request) => {
   if (!source || !['email', 'notification'].includes(source)) {
     return json({ error: "Campo 'source' debe ser 'email' o 'notification'" }, 400);
   }
-
   if (!raw_text || typeof raw_text !== 'string' || raw_text.trim().length < 5) {
     return json({ error: "Campo 'raw_text' requerido (mínimo 5 caracteres)" }, 400);
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-
-  // ── 3. Lookup por token_hash → user_id ──────────────────────────────────
-  const { data: tokenRow, error: tokenErr } = await supabase
-    .from('ingest_tokens')
-    .select('user_id, activo, expira_en')
-    .eq('token_hash', tokenHash)
-    .single();
-
-  if (tokenErr || !tokenRow) {
-    await logError(supabase, tokenHash, source, raw_text, 'AUTH_FAILED', 'Token no encontrado', null);
-    return json({ error: 'Unauthorized' }, 401);
-  }
-
-  if (!tokenRow.activo) {
-    await logError(supabase, tokenHash, source, raw_text, 'AUTH_FAILED', 'Token revocado', null);
-    return json({ error: 'Unauthorized' }, 401);
-  }
-
-  if (tokenRow.expira_en && new Date(tokenRow.expira_en) < new Date()) {
-    await logError(supabase, tokenHash, source, raw_text, 'AUTH_FAILED', 'Token expirado', null);
-    return json({ error: 'Unauthorized' }, 401);
-  }
-
-  const userId = tokenRow.user_id as string;
-
-  // Actualizar ultimo_uso sin esperar
-  supabase
-    .from('ingest_tokens')
-    .update({ ultimo_uso: new Date().toISOString() })
-    .eq('token_hash', tokenHash)
-    .then(() => {});
-
-  // ── 3b. Rate limiting — 30 req/hora por token ───────────────────────────
-  const { data: allowed } = await supabase.rpc('fn_check_rate_limit', {
-    p_clave:   `ingest:${tokenHash}`,
-    p_max:     30,
-    p_ventana: '1 hour',
-  });
-  if (!allowed) {
-    return json({ error: 'Too Many Requests' }, 429);
-  }
-
   // ── 4. Parsear texto con Claude Haiku ────────────────────────────────────
+  // Errores de parsing → 200 para que Make/n8n no reintente (no es un error recuperable)
   let parsed: Awaited<ReturnType<typeof parseTransactionText>>;
   try {
     parsed = await parseTransactionText(raw_text.trim());
@@ -132,14 +116,9 @@ Deno.serve(async (req: Request) => {
       .single();
 
     tarjetaId = tarjeta?.id ?? null;
-
-    if (!tarjetaId) {
-      console.warn(`No se encontró tarjeta con *${parsed.ultimos_4_digitos} para user ${userId} — tx sin tarjeta_id`);
-    }
   }
 
-  // ── 6. Insertar transacción con estado PENDIENTE_REVISION ────────────────
-  // ingest_hash = sha256(user_id + texto normalizado) — previene duplicados
+  // ── 6. Insertar transacción ───────────────────────────────────────────────
   const normalizedText = raw_text.trim().toLowerCase().replace(/\s+/g, ' ');
   const ingestHash     = await sha256hex(userId + normalizedText);
 
@@ -168,7 +147,6 @@ Deno.serve(async (req: Request) => {
 
   if (insertErr) {
     if ((insertErr as { code?: string }).code === '23505') {
-      // Correo duplicado — ya fue procesado; no registrar error
       return json({ ok: true, duplicado: true }, 200);
     }
     console.error('Error insertando transacción:', insertErr);
@@ -209,7 +187,5 @@ async function logError(
     .from('log_errores_ingesta')
     .insert({ token, source, raw_text, error_tipo, error_msg, parsed_partial });
 
-  if (error) {
-    console.error('No se pudo guardar en log_errores_ingesta:', error.message);
-  }
+  if (error) console.error('No se pudo guardar en log_errores_ingesta:', error.message);
 }
