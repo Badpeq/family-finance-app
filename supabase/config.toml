@@ -5,3 +5,6 @@ verify_jwt = false   # Meta envía requests sin JWT de Supabase — la seguridad
 
 [functions.ingest-transaction]
 verify_jwt = false   # La seguridad viene del token en la tabla ingest_tokens
+
+[functions.actualizar-tipo-cambio]
+verify_jwt = false   # Llamado por pg_cron; no transporta JWT de usuario
