@@ -92,7 +92,7 @@ export async function extractYapePlinData(
   }
 
   const monto = parseFloat(String(parsed.monto));
-  if (isNaN(monto) || monto <= 0) {
+  if (!Number.isFinite(monto) || monto <= 0 || monto > 500_000) {
     console.warn('parseImage: monto inválido:', parsed.monto);
     return null;
   }
@@ -101,7 +101,7 @@ export async function extractYapePlinData(
 
   return {
     monto,
-    comercio_o_persona: String(parsed.comercio_o_persona ?? 'Sin nombre'),
+    comercio_o_persona: String(parsed.comercio_o_persona ?? 'Sin nombre').slice(0, 120),
     fecha:              isValidDate(parsed.fecha) ? String(parsed.fecha) : hoy,
     moneda:             'PEN',
     operacion_id:       String(parsed.operacion_id).trim(),

@@ -16,6 +16,8 @@ export interface ParsedTransaction {
   comercio:           string;
   ultimos_4_digitos:  string | null;
   tipo:               'gasto';
+  categoria_sugerida: string | null;
+  confianza:          number | null;
 }
 
 const SYSTEM_PROMPT = `Eres un extractor de datos financieros para una app de finanzas personales peruana.
@@ -23,15 +25,18 @@ Analizas textos de correos bancarios y notificaciones push de bancos peruanos (B
 Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin explicaciones adicionales.
 Si un campo no está presente en el texto, usa null.`;
 
-function buildUserPrompt(rawText: string): string {
-  const hoy = new Date().toISOString().split('T')[0];
+function buildUserPrompt(rawText: string, categorias: string[]): string {
+  const hoy   = new Date().toISOString().split('T')[0];
+  const catList = categorias.length > 0 ? categorias.join(', ') : 'Alimentación, Transporte, Servicios, Otros';
   return `Extrae los datos de gasto del siguiente texto y devuelve exactamente este JSON:
 {
   "monto": <número decimal sin símbolo de moneda, ejemplo: 45.50>,
   "moneda": "<'PEN' si es soles (S/, S/., PEN) o 'USD' si es dólares ($, USD)>",
   "comercio": "<nombre del establecimiento o destinatario donde se realizó el gasto>",
   "ultimos_4_digitos": "<últimos 4 dígitos de la tarjeta si aparecen como *1234 o (1234), o null si no se mencionan>",
-  "tipo": "gasto"
+  "tipo": "gasto",
+  "categoria": "<una de: ${catList}>",
+  "confianza": <número 0-1 de qué tan seguro estás de la categoría>
 }
 
 Fecha de hoy para referencia: ${hoy}
@@ -45,8 +50,11 @@ ${rawText}`;
  * Retorna null si no se puede identificar un gasto válido.
  */
 export async function parseTransactionText(
-  rawText: string,
+  rawText:   string,
+  categorias: string[] = [],
 ): Promise<ParsedTransaction | null> {
+  rawText = rawText.slice(0, 4000);
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method:  'POST',
     headers: {
@@ -60,7 +68,7 @@ export async function parseTransactionText(
       system:     SYSTEM_PROMPT,
       messages: [{
         role:    'user',
-        content: buildUserPrompt(rawText),
+        content: buildUserPrompt(rawText, categorias),
       }],
     }),
   });
@@ -80,19 +88,26 @@ export async function parseTransactionText(
   }
 
   const monto = parseFloat(String(parsed.monto ?? ''));
-  if (isNaN(monto) || monto <= 0) {
+  if (!Number.isFinite(monto) || monto <= 0 || monto > 500_000) {
     console.warn('parseText: monto inválido:', parsed.monto);
     return null;
   }
 
-  const moneda = String(parsed.moneda ?? 'PEN').toUpperCase();
+  if (!['PEN', 'USD'].includes(String(parsed.moneda ?? '').toUpperCase())) {
+    parsed.moneda = 'PEN';
+  }
+  const moneda = String(parsed.moneda).toUpperCase();
+
+  const confianza = parsed.confianza != null ? Math.min(1, Math.max(0, Number(parsed.confianza))) : null;
 
   return {
     monto,
     moneda:             (moneda === 'USD' ? 'USD' : 'PEN') as 'PEN' | 'USD',
-    comercio:           String(parsed.comercio ?? 'Sin nombre').trim(),
+    comercio:           String(parsed.comercio ?? 'Sin nombre').slice(0, 120).trim(),
     ultimos_4_digitos:  extractDigits(parsed.ultimos_4_digitos),
     tipo:               'gasto',
+    categoria_sugerida: parsed.categoria ? String(parsed.categoria).slice(0, 80) : null,
+    confianza:          Number.isFinite(confianza) ? confianza : null,
   };
 }
 
