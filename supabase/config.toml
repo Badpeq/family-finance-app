@@ -1,6 +1,4 @@
-[project]
-# ID de tu proyecto Supabase (Settings → General → Reference ID)
-id = "tsdawpxiqqnesikcqlex"
+project_id = "tsdawpxiqqnesikcqlex"
 
 [functions.whatsapp-webhook]
 verify_jwt = false   # Meta envía requests sin JWT de Supabase — la seguridad viene del HMAC-SHA256

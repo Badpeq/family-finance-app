@@ -9,7 +9,7 @@
     "expo": "~56.0.9",
     "expo-constants": "~56.0.17",
     "expo-file-system": "~56.0.8",
-    "expo-image-picker": "~56.0.17",
+    "expo-image-picker": "~56.0.21",
     "expo-linking": "~56.0.13",
     "expo-notifications": "~56.0.16",
     "expo-router": "~56.2.9",
@@ -45,16 +45,23 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/__tests__/**/*.test.ts"],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"
     },
     "transform": {
-      "^.+\\.tsx?$": ["ts-jest", {
-        "tsconfig": "tsconfig.test.json"
-      }]
+      "^.+\\.tsx?$": [
+        "ts-jest",
+        {
+          "tsconfig": "tsconfig.test.json"
+        }
+      ]
     },
-    "transformIgnorePatterns": ["node_modules/"]
+    "transformIgnorePatterns": [
+      "node_modules/"
+    ]
   },
   "private": true
 }
