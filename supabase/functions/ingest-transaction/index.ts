@@ -139,6 +139,10 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 6. Insertar transacción con estado PENDIENTE_REVISION ────────────────
+  // ingest_hash = sha256(user_id + texto normalizado) — previene duplicados
+  const normalizedText = raw_text.trim().toLowerCase().replace(/\s+/g, ' ');
+  const ingestHash     = await sha256hex(userId + normalizedText);
+
   const { data: tx, error: insertErr } = await supabase
     .from('transacciones')
     .insert({
@@ -157,11 +161,16 @@ Deno.serve(async (req: Request) => {
       es_gasto_unico: true,
       estado:         'PENDIENTE_REVISION',
       activo:         true,
+      ingest_hash:    ingestHash,
     })
     .select('id')
     .single();
 
   if (insertErr) {
+    if ((insertErr as { code?: string }).code === '23505') {
+      // Correo duplicado — ya fue procesado; no registrar error
+      return json({ ok: true, duplicado: true }, 200);
+    }
     console.error('Error insertando transacción:', insertErr);
     await logError(supabase, tokenHash, source, raw_text, 'INSERT_FAILED', insertErr.message, parsed as unknown as Record<string, unknown>);
     return json({ ok: false, error: 'Error al guardar — guardado en log', logged: true }, 200);
