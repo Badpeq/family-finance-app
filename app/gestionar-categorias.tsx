@@ -24,11 +24,13 @@ const ICON_OPTS = ['📦','🛒','🚗','🏠','🎬','💊','📚','👕','⚡'
 
 interface Cat { id: string; nombre: string; icono: string }
 interface Subcat { id: string; nombre: string; categoria_id: string | null; categoria_nombre: string | null }
+interface Regla { id: string; comercio_normalizado: string; categoria: string; veces_aplicada: number }
 
 export default function GestionarCategorias() {
   const [userId,   setUserId]   = useState('');
   const [custom,   setCustom]   = useState<Cat[]>([]);
   const [subcats,  setSubcats]  = useState<Subcat[]>([]);
+  const [reglas,   setReglas]   = useState<Regla[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -59,13 +61,15 @@ export default function GestionarCategorias() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user || !active) return;
         setUserId(user.id);
-        const [catRes, subRes] = await Promise.all([
+        const [catRes, subRes, reglaRes] = await Promise.all([
           supabase.from('categorias_personalizadas').select('id,nombre,icono').eq('user_id', user.id).order('nombre'),
           supabase.from('subcategorias').select('id,nombre,categoria_id,categoria_nombre').eq('user_id', user.id).order('nombre'),
+          supabase.from('reglas_categorizacion').select('id,comercio_normalizado,categoria,veces_aplicada').eq('user_id', user.id).order('veces_aplicada', { ascending: false }),
         ]);
         if (active) {
           setCustom((catRes.data ?? []) as Cat[]);
           setSubcats((subRes.data ?? []) as Subcat[]);
+          setReglas((reglaRes.data ?? []) as Regla[]);
           setLoading(false);
         }
       })();
@@ -208,6 +212,33 @@ export default function GestionarCategorias() {
             </View>
           );
         })}
+
+        {/* ── Reglas aprendidas ── */}
+        {reglas.length > 0 && (
+          <View style={{ marginTop: 24 }}>
+            <Text style={s.reglasTitulo}>Reglas aprendidas</Text>
+            <Text style={s.reglasHint}>
+              Cuando aparece este comercio, la categoría se asigna automáticamente.
+            </Text>
+            {reglas.map(r => (
+              <View key={r.id} style={s.reglaRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.reglaCom} numberOfLines={1}>{r.comercio_normalizado}</Text>
+                  <Text style={s.reglaCat}>{r.categoria} · {r.veces_aplicada} uso{r.veces_aplicada !== 1 ? 's' : ''}</Text>
+                </View>
+                <TouchableOpacity
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={async () => {
+                    await supabase.from('reglas_categorizacion').delete().eq('id', r.id);
+                    setReglas(prev => prev.filter(x => x.id !== r.id));
+                  }}
+                >
+                  <Text style={s.delCatIcon}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={{ height: 48 }} />
       </ScrollView>
@@ -383,4 +414,14 @@ const s = StyleSheet.create({
   confirmCancelText: { fontSize: 14, color: T.textSec, fontWeight: '500' },
   confirmDanger:     { flex: 1, height: 46, backgroundColor: T.red, borderRadius: R.control, justifyContent: 'center', alignItems: 'center' },
   confirmDangerText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+
+  reglasTitulo: { fontSize: 14, fontWeight: '700', color: T.textPrimary, marginBottom: 4 },
+  reglasHint:   { fontSize: 11, color: T.textMicro, marginBottom: 12, lineHeight: 16 },
+  reglaRow:     {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: T.card, borderRadius: 12, borderWidth: 1, borderColor: T.border,
+    padding: 12, marginBottom: 6,
+  },
+  reglaCom:  { fontSize: 13, fontWeight: '600', color: T.textPrimary },
+  reglaCat:  { fontSize: 11, color: T.textMicro, marginTop: 2 },
 });

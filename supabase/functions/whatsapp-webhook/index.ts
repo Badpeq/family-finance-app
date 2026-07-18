@@ -33,6 +33,8 @@ import {
   validateMetaSignature,
 } from './providers.ts';
 import { extractYapePlinData } from './parseImage.ts';
+import { parseTransactionText } from '../ingest-transaction/parseText.ts';
+import { captureException } from '../_shared/sentry.ts';
 
 const SUPABASE_URL          = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -87,17 +89,6 @@ Deno.serve(async (req: Request) => {
     return new Response('OK', { status: 200 });
   }
 
-  if (msg.type !== 'image' || !msg.mediaId) {
-    // Solo procesamos imágenes
-    if (msg.type === 'text') {
-      await sendWhatsAppReply(
-        msg.from,
-        '👋 Para registrar un gasto, envía la captura de pantalla de tu Yape o Plin aquí.',
-      );
-    }
-    return new Response('OK', { status: 200 });
-  }
-
   // 3. Buscar usuario por número WhatsApp
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
@@ -116,7 +107,21 @@ Deno.serve(async (req: Request) => {
     return new Response('OK', { status: 200 });
   }
 
-  // 3b. Rate limiting — 60 req/hora por número WhatsApp
+  // 3b. Dispatch por tipo de mensaje (después de verificar usuario)
+  if (msg.type === 'text' && msg.text) {
+    await handleTextMessage(supabase, msg.from, msg.text, profile);
+    return new Response('OK', { status: 200 });
+  }
+
+  if (msg.type !== 'image' || !msg.mediaId) {
+    await sendWhatsAppReply(
+      msg.from,
+      '👋 Envía la captura de pantalla de tu Yape o Plin, o escribe el monto y descripción (ej: "25 taxi").',
+    );
+    return new Response('OK', { status: 200 });
+  }
+
+  // 3c. Rate limiting — 60 req/hora por número WhatsApp
   // Meta requiere respuesta 200 para no reintentar, así que avisamos al usuario y salimos
   const { data: allowed } = await supabase.rpc('fn_check_rate_limit', {
     p_clave:   `wa:${msg.from}`,
@@ -147,6 +152,7 @@ Deno.serve(async (req: Request) => {
     extracted = await extractYapePlinData(media.base64, media.mimeType);
   } catch (err) {
     console.error('Error en extracción AI:', err);
+    captureException(err, { from: msg.from });
     await sendWhatsAppReply(
       msg.from,
       '⚠️ Ocurrió un error procesando el comprobante. Intenta de nuevo o registra el gasto manualmente.',
@@ -214,3 +220,104 @@ Deno.serve(async (req: Request) => {
   console.log(`Tx insertada: user=${profile.id} monto=${extracted.monto} op=${extracted.operacion_id}`);
   return new Response('OK', { status: 200 });
 });
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function normalizar(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/\p{Mn}/gu, '').replace(/\s+/g, ' ');
+}
+
+/**
+ * Procesa mensajes de texto libre: "25 taxi", "gasté 40 en menú", "ingreso 500 freelance".
+ * Usa el mismo parseText que ingest-transaction con cadena de decisión simplificada.
+ */
+async function handleTextMessage(
+  supabase: ReturnType<typeof createClient>,
+  from:    string,
+  text:    string,
+  profile: { id: string; nombre: string } | null,
+): Promise<void> {
+  if (!profile) {
+    await sendWhatsAppReply(from,
+      '❌ Tu número no está vinculado a ninguna cuenta de Family Finance.\n\nAbre la app → Configuración → WhatsApp para vincularlo.',
+    );
+    return;
+  }
+
+  const { data: catRows } = await supabase.from('v_categorias').select('nombre').neq('nombre', 'Por clasificar');
+  const categorias = (catRows ?? []).map((r: { nombre: string }) => r.nombre);
+
+  let parsed: Awaited<ReturnType<typeof parseTransactionText>>;
+  try {
+    parsed = await parseTransactionText(text, categorias);
+  } catch {
+    await sendWhatsAppReply(from, '⚠️ No pude interpretar el mensaje. Intenta: "25 taxi" o "40 almuerzo".');
+    return;
+  }
+
+  if (!parsed) {
+    await sendWhatsAppReply(from, '🤔 No pude identificar un monto válido. Intenta: "25 taxi" o "40 almuerzo".');
+    return;
+  }
+
+  // Cadena de decisión
+  const comercioNorm = normalizar(parsed.comercio);
+  const { data: regla } = await supabase.from('reglas_categorizacion')
+    .select('id, categoria, veces_aplicada').eq('user_id', profile.id).eq('comercio_normalizado', comercioNorm).maybeSingle();
+
+  let categoria:       string;
+  let autoClasificado: boolean;
+  let estado:          string;
+  let categoriaSug:    string | null = null;
+
+  if (regla) {
+    categoria       = (regla as { categoria: string }).categoria;
+    autoClasificado = true;
+    estado          = 'PROCESADO';
+    supabase.from('reglas_categorizacion')
+      .update({ veces_aplicada: (regla as { veces_aplicada: number }).veces_aplicada + 1 })
+      .eq('id', (regla as { id: string }).id).then(() => {});
+  } else if (parsed.confianza != null && parsed.confianza >= 0.90 && parsed.categoria_sugerida) {
+    categoria       = parsed.categoria_sugerida;
+    autoClasificado = true;
+    estado          = 'PROCESADO';
+  } else {
+    categoria       = 'Por clasificar';
+    autoClasificado = false;
+    estado          = 'PENDIENTE_REVISION';
+    categoriaSug    = parsed.categoria_sugerida;
+  }
+
+  const { error } = await supabase.from('transacciones').insert({
+    user_id:            profile.id,
+    tipo:               'gasto',
+    monto:              parsed.monto,
+    moneda:             parsed.moneda,
+    tipo_cambio:        parsed.moneda === 'USD' ? null : 1.0,
+    categoria,
+    categoria_sugerida: categoriaSug,
+    confianza_ia:       parsed.confianza,
+    auto_clasificado:   autoClasificado,
+    descripcion:        parsed.comercio,
+    fecha:              new Date().toISOString().split('T')[0],
+    metodo_pago:        'efectivo',
+    fuente:             'whatsapp_texto',
+    fuente_raw:         text,
+    es_gasto_unico:     true,
+    estado,
+    activo:             true,
+  });
+
+  if (error) {
+    console.error('Error insertando tx texto WA:', error);
+    await sendWhatsAppReply(from, '❌ Error al guardar. Inténtalo de nuevo.');
+    return;
+  }
+
+  const sym = parsed.moneda === 'USD' ? '$' : 'S/';
+  const catLabel = autoClasificado ? categoria : (categoriaSug ? `${categoriaSug} (pendiente)` : 'Por clasificar (pendiente)');
+  await sendWhatsAppReply(
+    from,
+    `✅ Gasto registrado\n\n💸 ${sym} ${parsed.monto.toFixed(2)} · ${parsed.comercio}\n🏷️ ${catLabel}\n\nAbre la app para revisar.`,
+  );
+}

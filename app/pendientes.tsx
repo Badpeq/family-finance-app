@@ -11,16 +11,23 @@ import { T, R, MAXW } from '@/theme';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface PendingTx {
-  id:          string;
-  monto:       number;
-  moneda:      string | null;
-  descripcion: string | null;
-  fecha:       string | null;
-  creado_en:   string;
-  fuente:      string | null;
-  fuente_raw:  string | null;
-  metodo_pago: string | null;
-  tarjeta_id:  string | null;
+  id:                 string;
+  monto:              number;
+  moneda:             string | null;
+  descripcion:        string | null;
+  fecha:              string | null;
+  creado_en:          string;
+  fuente:             string | null;
+  fuente_raw:         string | null;
+  metodo_pago:        string | null;
+  tarjeta_id:         string | null;
+  categoria_sugerida: string | null;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function normalizar(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/\p{Mn}/gu, '').replace(/\s+/g, ' ');
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -75,7 +82,7 @@ export default function Pendientes() {
 
     const { data } = await supabase
       .from('transacciones')
-      .select('id,monto,moneda,descripcion,fecha,creado_en,fuente,fuente_raw,metodo_pago,tarjeta_id')
+      .select('id,monto,moneda,descripcion,fecha,creado_en,fuente,fuente_raw,metodo_pago,tarjeta_id,categoria_sugerida')
       .eq('user_id', user.id)
       .eq('estado', 'PENDIENTE_REVISION')
       .eq('activo', true)
@@ -87,13 +94,44 @@ export default function Pendientes() {
 
   async function confirmar(tx: PendingTx, categoria: string) {
     setSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
     await supabase
       .from('transacciones')
       .update({ estado: 'PROCESADO', categoria })
       .eq('id', tx.id);
+
+    // Aprender la regla para este comercio
+    if (user && tx.descripcion) {
+      const comercioNorm = normalizar(tx.descripcion);
+      supabase.from('reglas_categorizacion').upsert(
+        { user_id: user.id, comercio_normalizado: comercioNorm, categoria },
+        { onConflict: 'user_id,comercio_normalizado' },
+      ).then(() => {});
+    }
+
     setSaving(false);
     setShowCatModal(false);
     setSelected(null);
+    load();
+  }
+
+  async function confirmarTodo() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setSaving(true);
+    const conSugerida = txs.filter(t => t.categoria_sugerida);
+    await Promise.all(conSugerida.map(async tx => {
+      const cat = tx.categoria_sugerida!;
+      await supabase.from('transacciones').update({ estado: 'PROCESADO', categoria: cat }).eq('id', tx.id);
+      if (tx.descripcion) {
+        const comercioNorm = normalizar(tx.descripcion);
+        await supabase.from('reglas_categorizacion').upsert(
+          { user_id: user.id, comercio_normalizado: comercioNorm, categoria: cat },
+          { onConflict: 'user_id,comercio_normalizado' },
+        );
+      }
+    }));
+    setSaving(false);
     load();
   }
 
@@ -135,12 +173,17 @@ export default function Pendientes() {
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
             <Text style={s.backIcon}>‹</Text>
           </TouchableOpacity>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={s.title}>Pendientes de revisión</Text>
             <Text style={s.subtitle}>
               {txs.length === 0 ? 'Todo al día' : `${txs.length} gasto${txs.length > 1 ? 's' : ''} por revisar`}
             </Text>
           </View>
+          {txs.some(t => t.categoria_sugerida) && (
+            <TouchableOpacity style={s.confirmAllBtn} onPress={confirmarTodo} disabled={saving}>
+              <Text style={s.confirmAllText}>✓ Confirmar todo</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
 
@@ -169,6 +212,11 @@ export default function Pendientes() {
                   <Text style={s.cardMeta}>
                     {fuenteLabel(tx.fuente)}  ·  {fmtDate(tx.fecha, tx.creado_en)}
                   </Text>
+                  {tx.categoria_sugerida && (
+                    <View style={s.sugChip}>
+                      <Text style={s.sugChipText}>✨ {tx.categoria_sugerida}</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={s.monto}>{fmt(tx.monto, tx.moneda)}</Text>
               </View>
@@ -193,7 +241,14 @@ export default function Pendientes() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={s.btnConfirm}
-                  onPress={() => { setSelected(tx); setShowCatModal(true); }}
+                  onPress={() => {
+                    if (tx.categoria_sugerida) {
+                      confirmar(tx, tx.categoria_sugerida);
+                    } else {
+                      setSelected(tx);
+                      setShowCatModal(true);
+                    }
+                  }}
                 >
                   <Text style={s.btnConfirmText}>✓ Confirmar</Text>
                 </TouchableOpacity>
@@ -291,6 +346,12 @@ const s = StyleSheet.create({
   comercio:   { fontSize: 15, fontWeight: '700', color: T.textPrimary },
   cardMeta:   { fontSize: 12, color: T.textMicro, marginTop: 3 },
   monto:      { fontSize: 17, fontWeight: '800', color: T.red },
+
+  confirmAllBtn:  { backgroundColor: T.accentSoft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  confirmAllText: { fontSize: 12, fontWeight: '700', color: T.accentDark },
+
+  sugChip:     { marginTop: 5, alignSelf: 'flex-start', backgroundColor: T.accentSoft, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  sugChipText: { fontSize: 11, fontWeight: '600', color: T.accentDark },
 
   rawBtn:     { marginTop: 10, alignSelf: 'flex-start' },
   rawBtnText: { fontSize: 12, color: T.accent, fontWeight: '600' },
