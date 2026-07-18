@@ -1,4 +1,4 @@
-project_id = "tsdawpxiqqnesikcqlex"
+project_id = "oqbbwetdczehjlblzkfh"
 
 [functions.whatsapp-webhook]
 verify_jwt = false   # Meta envía requests sin JWT de Supabase — la seguridad viene del HMAC-SHA256
