@@ -1,17 +1,15 @@
 -- Paso 1.3 — Hashear tokens de ingesta
 -- Elimina el bearer en texto plano de la DB; solo se guarda el SHA-256
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- 1. Agregar las columnas nuevas
 ALTER TABLE public.ingest_tokens
   ADD COLUMN id        UUID NOT NULL DEFAULT gen_random_uuid(),
   ADD COLUMN token_hash TEXT,
   ADD COLUMN expira_en  TIMESTAMPTZ;
 
--- 2. Migrar los tokens existentes al hash
+-- 2. Migrar los tokens existentes al hash (sha256 built-in desde Postgres 11)
 UPDATE public.ingest_tokens
-  SET token_hash = encode(digest(token, 'sha256'), 'hex');
+  SET token_hash = encode(sha256(token::bytea), 'hex');
 
 -- 3. Aplicar restricciones
 ALTER TABLE public.ingest_tokens
